@@ -79,6 +79,13 @@ La ubicación pide permiso la primera vez que abres la app. Si dijiste que no, o
 
 En ⚙ → **Voz** escoges entre las voces que tenga la tableta (al cambiarla suena una prueba), y ajustas tono y velocidad. **⬇ Descargar más voces** abre la pantalla del motor de voz de la tableta para bajar voces nuevas; al volver aparecen en la lista. Las que dicen "por descargar" se bajan solas la primera vez que se usan (si el motor lo permite), y las que dicen "usa internet" necesitan wifi.
 
+## Conversaciones guardadas
+
+Cada pregunta y respuesta se guarda en `%USERPROFILE%\.jarvis\workspace\conversaciones`, un archivo por día (`2026-11-18.md`), en texto simple que se abre con el Bloc de notas. Se guardan los últimos 365 días. Sirven para dos cosas:
+
+- Jarvis las consulta si le preguntas por algo que hablaron otro día.
+- Si algún día cambias de IA, puedes copiar esos archivos y pegárselos.
+
 ## Cambiar de modelo
 
 En el ⚙ de la tableta eliges **Haiku** (el más rápido), **Sonnet** (equilibrado) u **Opus** (el más inteligente, más lento y gasta más de tu límite de Pro). La conversación sigue aunque cambies de modelo.
