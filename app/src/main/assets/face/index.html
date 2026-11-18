@@ -8,7 +8,27 @@
 </head>
 <body>
   <canvas id="face"></canvas>
-  <div id="status">Toca la cara para probar la voz</div>
+  <div id="status">Toca la cara para hablar</div>
+  <button id="gear" aria-label="Configuración">⚙</button>
+
+  <div id="settings" hidden>
+    <form id="settings-form">
+      <h1>Conectar con el PC</h1>
+      <p>Abre Jarvis en tu PC y escribe aquí lo que muestra la ventana.</p>
+      <label>IP del PC
+        <input id="host" inputmode="decimal" autocomplete="off" placeholder="192.168.1.20">
+      </label>
+      <label>Código
+        <input id="code" inputmode="numeric" autocomplete="off" placeholder="123456">
+      </label>
+      <div id="settings-msg" role="status"></div>
+      <div class="buttons">
+        <button type="button" id="cancel">Cerrar</button>
+        <button type="submit" id="save">Conectar</button>
+      </div>
+    </form>
+  </div>
+
   <script src="face.js"></script>
 </body>
 </html>

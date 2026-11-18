@@ -1,6 +1,7 @@
 /*
  * Jarvis face: two glowing eyes and a mouth on a canvas.
- * Public API (called from Android): Face.setTalking(bool), Face.pulse(), Face.setStatus(text)
+ * Public API (called from Android): Face.setMode(m), Face.setLevel(x), Face.setTalking(bool),
+ * Face.pulse(), Face.setStatus(text), Face.openSettings(), Face.configResult(ok, msg)
  */
 (function () {
   'use strict';
@@ -13,6 +14,9 @@
 
   var state = {
     talking: false,
+    mode: 'idle',        // idle | listening | thinking (talking is separate)
+    level: 0,            // mic level while listening, 0..1
+    wide: 0,             // eased 0..1, eyes widen while listening
     mouthOpen: 0,        // 0..1, eased toward mouthTarget
     mouthTarget: 0,
     nextSyllable: 0,     // time of next random mouth shape while talking
@@ -65,6 +69,14 @@
       state.lookTarget.y = (Math.random() - 0.5) * 0.4;
       state.nextLook = now + 1500 + Math.random() * 3500;
     }
+    if (state.mode === 'thinking') {
+      state.lookTarget.x = 0.5;
+      state.lookTarget.y = -0.8;
+    } else if (state.mode === 'listening') {
+      state.lookTarget.x = 0;
+      state.lookTarget.y = 0;
+    }
+    state.wide += ((state.mode === 'listening' ? 1 : 0) - state.wide) * 0.15;
     state.look.x += (state.lookTarget.x - state.look.x) * 0.06;
     state.look.y += (state.lookTarget.y - state.look.y) * 0.06;
 
@@ -90,8 +102,8 @@
     ctx.shadowBlur = s * 0.04;
 
     // Eyes
-    var eyeW = s * 0.16;
-    var eyeH = s * 0.22 * (1 - state.blink * 0.92);
+    var eyeW = s * 0.16 * (1 + state.wide * 0.12);
+    var eyeH = s * 0.22 * (1 + state.wide * 0.12) * (1 - state.blink * 0.92);
     var eyeGap = s * 0.2;
     var eyeY = cy - s * 0.12 + state.look.y * s * 0.03;
     var dx = state.look.x * s * 0.04;
@@ -107,7 +119,20 @@
     var open = state.mouthOpen;
     ctx.lineWidth = s * 0.022;
     ctx.lineCap = 'round';
-    if (open < 0.04) {
+    if (state.mode === 'listening' && open < 0.04) {
+      var r = s * (0.03 + state.level * 0.05);
+      ctx.beginPath();
+      ctx.arc(cx, mouthY + s * 0.02, r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (state.mode === 'thinking' && open < 0.04) {
+      for (var i = 0; i < 3; i++) {
+        var phase = (now / 400 + i * 0.33) % 1;
+        var dotR = s * (0.015 + 0.01 * Math.sin(phase * Math.PI));
+        ctx.beginPath();
+        ctx.arc(cx + (i - 1) * s * 0.07, mouthY + s * 0.02, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (open < 0.04) {
       ctx.beginPath();
       ctx.moveTo(cx - mouthW / 2, mouthY);
       ctx.quadraticCurveTo(cx, mouthY + s * 0.07, cx + mouthW / 2, mouthY);
@@ -153,21 +178,78 @@
   }
 
   var GREETINGS = [
-    'Hola Jorge. Soy Jarvis. Pronto podré escucharte y conversar contigo.',
-    'Todos los sistemas en línea. Esperando instrucciones.',
-    'Por ahora solo sé mover la boca. En el siguiente paso aprenderé a escucharte.'
+    'Hola Jorge. Soy Jarvis. Así me veo cuando hablo.',
+    'Todos los sistemas en línea. Esperando instrucciones.'
   ];
   var greetingIndex = 0;
+  var onTablet = !!(window.Android && window.Android.listen);
 
-  canvas.addEventListener('click', function () {
+  function onTap() {
     if (state.talking) {
       if (window.Android && window.Android.stop) window.Android.stop();
       else if ('speechSynthesis' in window) speechSynthesis.cancel();
       Face.setTalking(false);
       return;
     }
-    setStatus('');
-    speak(GREETINGS[greetingIndex++ % GREETINGS.length]);
+    if (!onTablet) {
+      // Preview in a normal browser: just show the voice.
+      setStatus('');
+      speak(GREETINGS[greetingIndex++ % GREETINGS.length]);
+      return;
+    }
+    if (state.mode === 'listening') window.Android.stopListening();
+    else if (state.mode === 'idle') window.Android.listen();
+  }
+
+  // Tap to talk; press and hold (or the gear) for settings.
+  var pressTimer = null, longPressed = false;
+  canvas.addEventListener('pointerdown', function () {
+    longPressed = false;
+    pressTimer = setTimeout(function () { longPressed = true; openSettings(); }, 900);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
+    canvas.addEventListener(ev, function () { clearTimeout(pressTimer); });
+  });
+  canvas.addEventListener('click', function () { if (!longPressed) onTap(); });
+
+  // ---- Settings -----------------------------------------------------------
+  var settingsEl = document.getElementById('settings');
+  var hostEl = document.getElementById('host');
+  var codeEl = document.getElementById('code');
+  var msgEl = document.getElementById('settings-msg');
+  var saveEl = document.getElementById('save');
+
+  function openSettings() {
+    var cfg = {};
+    try { cfg = JSON.parse(window.Android ? window.Android.getConfig() : '{}'); } catch (e) {}
+    hostEl.value = cfg.host || '';
+    codeEl.value = cfg.code || '';
+    msgEl.textContent = '';
+    msgEl.className = '';
+    saveEl.disabled = false;
+    settingsEl.hidden = false;
+    hostEl.focus();
+  }
+  function closeSettings() { settingsEl.hidden = true; }
+
+  document.getElementById('gear').addEventListener('click', openSettings);
+  document.getElementById('cancel').addEventListener('click', closeSettings);
+  document.getElementById('settings-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!hostEl.value.trim() || !codeEl.value.trim()) {
+      msgEl.textContent = 'Escribe la IP y el código.';
+      msgEl.className = 'error';
+      return;
+    }
+    if (!window.Android) {
+      msgEl.textContent = 'Esto solo funciona en la tableta.';
+      msgEl.className = 'error';
+      return;
+    }
+    msgEl.textContent = 'Probando conexión…';
+    msgEl.className = '';
+    saveEl.disabled = true;
+    window.Android.saveConfig(hostEl.value, codeEl.value);
   });
 
   window.Face = {
@@ -175,12 +257,28 @@
       state.talking = !!on;
       state.nextSyllable = 0;
     },
+    setMode: function (mode) {
+      state.mode = mode;
+      state.level = 0;
+      if (mode === 'idle') state.nextLook = 0;
+    },
+    setLevel: function (x) { state.level = x; },
     pulse: function () {
       // A word boundary from the voice engine: snap the mouth open.
       state.mouthTarget = 0.6 + Math.random() * 0.4;
       state.nextSyllable = performance.now() + 90;
     },
-    setStatus: setStatus
+    setStatus: setStatus,
+    openSettings: openSettings,
+    configResult: function (ok, message) {
+      msgEl.textContent = message;
+      msgEl.className = ok ? 'ok' : 'error';
+      saveEl.disabled = false;
+      if (ok) {
+        setTimeout(closeSettings, 1200);
+        setStatus('Toca la cara para hablar');
+      }
+    }
   };
 
   window.addEventListener('resize', resize);

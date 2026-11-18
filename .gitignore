@@ -5,3 +5,5 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+bridge/.venv/
+__pycache__/
