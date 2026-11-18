@@ -78,9 +78,17 @@ class BridgeClient {
             int status = conn.getResponseCode();
             InputStream in = status < 400 ? conn.getInputStream() : conn.getErrorStream();
             String text = in == null ? "" : new String(readAll(in), StandardCharsets.UTF_8);
-            JSONObject json = text.isEmpty() ? new JSONObject() : new JSONObject(text);
+            JSONObject json;
+            try {
+                json = text.isEmpty() ? new JSONObject() : new JSONObject(text);
+            } catch (org.json.JSONException e) {
+                // Not our bridge answering (another program, a router, a filter).
+                String snippet = text.replaceAll("\\s+", " ").trim();
+                if (snippet.length() > 120) snippet = snippet.substring(0, 120);
+                throw new BridgeException("Respondió algo que no es Jarvis (error " + status + "): " + snippet);
+            }
             if (status >= 400) {
-                throw new BridgeException(json.optString("error", "El PC respondió con error " + status));
+                throw new BridgeException(json.optString("error", "El PC respondió con error") + " (" + status + ")");
             }
             return json;
         } catch (BridgeException e) {
@@ -88,9 +96,10 @@ class BridgeClient {
         } catch (java.net.SocketTimeoutException e) {
             throw new BridgeException("El PC tardó demasiado en responder");
         } catch (IOException e) {
-            throw new BridgeException("No encuentro el PC. ¿Está encendido Jarvis en el PC y en el mismo wifi?");
+            throw new BridgeException("No encuentro el PC. ¿Está encendido Jarvis en el PC y en el mismo wifi? ("
+                    + e.getClass().getSimpleName() + ": " + e.getMessage() + ")");
         } catch (Exception e) {
-            throw new BridgeException("Respuesta extraña del PC");
+            throw new BridgeException("Respuesta extraña del PC (" + e + ")");
         } finally {
             if (conn != null) conn.disconnect();
         }

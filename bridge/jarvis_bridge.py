@@ -174,6 +174,9 @@ def make_handler(cfg, transcriber, claude):
         def log_message(self, fmt, *args):
             pass  # we log our own lines
 
+        def log_request(self, code="-", size="-"):
+            log(f"Conexión de {self.client_address[0]}: {self.command} {self.path} -> {code}")
+
         def _json(self, status, payload):
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
