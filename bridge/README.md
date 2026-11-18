@@ -71,7 +71,9 @@ Las carpetas quedan guardadas y la ventana las muestra al arrancar.
 
 ## Estado de la tableta
 
-Con cada pregunta, la app manda un resumen del estado de la tableta: batería (y si está cargando), temperatura, modelo, almacenamiento, memoria RAM, señal de wifi, pantalla y brillo, volumen, luz ambiente, si está de pie o acostada y qué sensores tiene. Así puedes preguntarle "¿cuánta batería tienes?" o "¿cuánto espacio te queda?". Solo se usa para responder; no se guarda.
+Con cada pregunta, la app manda un resumen del estado de la tableta: batería (y si está cargando), temperatura, modelo, almacenamiento, memoria RAM, wifi, ubicación, pantalla y brillo, volumen, luz ambiente, si está de pie o acostada y qué sensores tiene. Así puedes preguntarle "¿cuánta batería tienes?" o "¿cuánto espacio te queda?". Solo se usa para responder; no se guarda.
+
+La ubicación pide permiso la primera vez que abres la app. Si dijiste que no, o Jarvis dice que la ubicación está apagada, actívala en la tableta en **Configuración → Ubicación** (y en **Apps → Jarvis → Permisos**). La Fire no tiene GPS: la ubica por el wifi, así que es aproximada.
 
 ## Cambiar de modelo
 

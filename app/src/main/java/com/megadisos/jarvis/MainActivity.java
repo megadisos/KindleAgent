@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_MIC = 1;
     private static final int REQ_CAM = 2;
+    private static final int REQ_LOC = 3;
     private static final String PREFS = "jarvis";
 
     private WebView webView;
@@ -56,6 +57,13 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         deviceInfo = new DeviceInfo(this);
+        if (Build.VERSION.SDK_INT >= 23 && !deviceInfo.hasLocationPermission()
+                && !prefs.getBoolean("asked_location", false)) {
+            // Asked once, so Jarvis can tell where the tablet is. Can be changed later in Android settings.
+            prefs.edit().putBoolean("asked_location", true).apply();
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOC);
+        }
         if (!prefs.getBoolean("camera_back_default", false)) {
             // From 0.6.1 the back camera is the default, also for earlier installs.
             prefs.edit().putString("camera", "back").putBoolean("camera_back_default", true).apply();
@@ -271,6 +279,10 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQ_LOC) {
+            deviceInfo.startLocation();
+            return;
+        }
         if (requestCode == REQ_CAM) {
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) toggleCamera();
             else setStatus("Necesito permiso para usar la cámara");
