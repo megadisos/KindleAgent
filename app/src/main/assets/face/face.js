@@ -318,32 +318,29 @@
 
   // ---- Keyboard and camera ------------------------------------------------
   var typebar = $('typebar'), typed = $('typed');
-  $('kbd-btn').addEventListener('click', function () {
-    typebar.hidden = !typebar.hidden;
-    document.body.classList.toggle('typing', !typebar.hidden);
-    if (!typebar.hidden) typed.focus();
-  });
+  function setTyping(on) {
+    typebar.hidden = !on;
+    document.body.classList.toggle('typing', on);
+    if (window.Android && window.Android.setTyping) window.Android.setTyping(on);
+    if (on) typed.focus();
+  }
+  $('kbd-btn').addEventListener('click', function () { setTyping(typebar.hidden); });
   typebar.addEventListener('submit', function (e) {
     e.preventDefault();
     var text = typed.value.trim();
-    if (!text && !$('photo').hidden) text = '¿Qué ves en esta foto?';
+    if (!text && cameraOn) text = '¿Qué ves?';
     if (!text) return;
     typed.value = '';
     typed.blur();
-    typebar.hidden = true;
-    document.body.classList.remove('typing');
+    setTyping(false);
     setStatus('«' + text + '»');
     if (window.Android && window.Android.sendText) window.Android.sendText(text);
     else speak('Escribiste: ' + text);
   });
+  var cameraOn = false;
   $('cam-btn').addEventListener('click', function () {
-    if (state.mode !== 'idle' || state.talking) return;
-    if (window.Android && window.Android.takePhoto) window.Android.takePhoto();
+    if (window.Android && window.Android.toggleCamera) window.Android.toggleCamera();
     else setStatus('La cámara solo funciona en la tableta.');
-  });
-  $('photo-x').addEventListener('click', function () {
-    Face.clearPhoto();
-    if (window.Android && window.Android.clearPhoto) window.Android.clearPhoto();
   });
 
   window.Face = {
@@ -364,13 +361,9 @@
     },
     setStatus: setStatus,
     openSettings: openSettings,
-    showPhoto: function (src) {
-      $('photo-img').src = src;
-      $('photo').hidden = false;
-    },
-    clearPhoto: function () {
-      $('photo').hidden = true;
-      $('photo-img').removeAttribute('src');
+    setCameraOn: function (on) {
+      cameraOn = !!on;
+      $('cam-btn').classList.toggle('on', cameraOn);
     },
     configResult: function (ok, message) {
       msgEl.textContent = message;
