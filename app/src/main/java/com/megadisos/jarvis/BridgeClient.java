@@ -59,14 +59,15 @@ class BridgeClient {
         request("POST", "/reset", "application/json", "{}".getBytes(StandardCharsets.UTF_8), 8000);
     }
 
-    Answer ask(File audio, String model, boolean edit) throws BridgeException {
+    Answer ask(File audio, String model, boolean edit, boolean shell) throws BridgeException {
         byte[] bytes;
         try (InputStream in = new FileInputStream(audio)) {
             bytes = readAll(in);
         } catch (IOException e) {
             throw new BridgeException("No pude leer la grabación");
         }
-        extraHeaders = new String[]{"X-Jarvis-Model", model, "X-Jarvis-Edit", edit ? "1" : "0"};
+        extraHeaders = new String[]{"X-Jarvis-Model", model, "X-Jarvis-Edit", edit ? "1" : "0",
+                "X-Jarvis-Shell", shell ? "1" : "0"};
         // Edits can take the PC a few minutes; the bridge gives up at 300 s.
         JSONObject json = request("POST", "/ask", "audio/mp4", bytes, 330000);
         return new Answer(json.optString("heard"), json.optString("reply"));
