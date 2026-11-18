@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
  *
  * JS -> Android: window.Android.listen(), stopListening(), stop(), speak(text),
  *                getConfig(), saveConfig(host, code), savePrefs(json),
- *                previewVoice(text, pitch, rate), sendText(text), toggleCamera(), flipCamera(), setTyping(on)
+ *                previewVoice(text, pitch, rate, voice), getVoices(), downloadVoices(), sendText(text), toggleCamera(), flipCamera(), setTyping(on)
  * Android -> JS: Face.setMode(mode), Face.setLevel(x), Face.setTalking(bool),
  *                Face.pulse(), Face.setStatus(text), Face.configResult(ok, msg)
  */
@@ -104,7 +104,7 @@ public class MainActivity extends Activity {
                     callJs("Face.pulse()");
                 }
             });
-            applyVoice(prefs.getFloat("pitch", 1f), prefs.getFloat("rate", 1f));
+            applyVoice(prefs.getFloat("pitch", 1f), prefs.getFloat("rate", 1f), prefs.getString("voice", ""));
             ttsReady = true;
         });
     }
@@ -259,10 +259,85 @@ public class MainActivity extends Activity {
         setStatus("front".equals(next) ? "Cámara frontal" : "Cámara trasera");
     }
 
-    private void applyVoice(float pitch, float rate) {
+    private void applyVoice(float pitch, float rate, String voiceName) {
         if (tts == null) return;
         tts.setPitch(pitch);
         tts.setSpeechRate(rate);
+        android.speech.tts.Voice v = findVoice(voiceName);
+        if (v != null) {
+            tts.setVoice(v);
+        } else {
+            int result = tts.setLanguage(new Locale("es", "US"));
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                tts.setLanguage(new Locale("es"));
+            }
+        }
+    }
+
+    private android.speech.tts.Voice findVoice(String name) {
+        if (name == null || name.isEmpty()) return null;
+        try {
+            for (android.speech.tts.Voice v : tts.getVoices()) {
+                if (name.equals(v.getName())) return v;
+            }
+        } catch (RuntimeException ignored) { }
+        return null;
+    }
+
+    /** Spanish voices first, then English, as JSON for the settings list. */
+    private String voiceList() {
+        org.json.JSONArray out = new org.json.JSONArray();
+        if (!ttsReady) return out.toString();
+        try {
+            java.util.List<android.speech.tts.Voice> voices = new java.util.ArrayList<>(tts.getVoices());
+            java.util.Collections.sort(voices, (a, b) -> {
+                int ra = rank(a), rb = rank(b);
+                if (ra != rb) return ra - rb;
+                int c = a.getLocale().toString().compareTo(b.getLocale().toString());
+                return c != 0 ? c : a.getName().compareTo(b.getName());
+            });
+            java.util.Map<String, Integer> perLocale = new java.util.HashMap<>();
+            for (android.speech.tts.Voice v : voices) {
+                if (rank(v) > 1) continue;  // only Spanish and English
+                Locale l = v.getLocale();
+                String region = l.getDisplayCountry(new Locale("es"));
+                String lang = l.getDisplayLanguage(new Locale("es"));
+                String key = lang + region;
+                int n = perLocale.containsKey(key) ? perLocale.get(key) + 1 : 1;
+                perLocale.put(key, n);
+                boolean missing = v.getFeatures() != null
+                        && v.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED);
+                String label = capitalize(lang) + (region.isEmpty() ? "" : " (" + region + ")") + " · voz " + n
+                        + (v.isNetworkConnectionRequired() ? " · usa internet" : "")
+                        + (missing ? " · por descargar" : "");
+                out.put(new JSONObject().put("name", v.getName()).put("label", label));
+            }
+        } catch (Exception ignored) { }
+        return out.toString();
+    }
+
+    private static int rank(android.speech.tts.Voice v) {
+        String lang = v.getLocale().getLanguage();
+        return "es".equals(lang) || "spa".equals(lang) ? 0 : "en".equals(lang) || "eng".equals(lang) ? 1 : 2;
+    }
+
+    private static String capitalize(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Opens the voice engine's download screen, or Android's voice settings. */
+    private void openVoiceDownloads() {
+        android.content.Intent install = new android.content.Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+        if (tts != null && tts.getDefaultEngine() != null) install.setPackage(tts.getDefaultEngine());
+        try {
+            startActivity(install);
+            return;
+        } catch (RuntimeException ignored) { }
+        try {
+            startActivity(new android.content.Intent("com.android.settings.TTS_SETTINGS"));
+        } catch (RuntimeException e) {
+            setStatus("Esta tableta no tiene pantalla para descargar voces");
+        }
     }
 
     private void speak(String text) {
@@ -413,6 +488,7 @@ public class MainActivity extends Activity {
                         .put("camera", camera())
                         .put("pitch", (double) prefs.getFloat("pitch", 1f))
                         .put("rate", (double) prefs.getFloat("rate", 1f))
+                        .put("voice", prefs.getString("voice", ""))
                         .toString();
             } catch (Exception e) {
                 return "{}";
@@ -426,6 +502,7 @@ public class MainActivity extends Activity {
                 String model = p.optString("model", "sonnet");
                 float pitch = (float) p.optDouble("pitch", 1.0);
                 float rate = (float) p.optDouble("rate", 1.0);
+                String voice = p.optString("voice", "");
                 prefs.edit()
                         .putString("model", model)
                         .putBoolean("edit", p.optBoolean("edit", false))
@@ -433,18 +510,31 @@ public class MainActivity extends Activity {
                         .putString("camera", "front".equals(p.optString("camera")) ? "front" : "back")
                         .putFloat("pitch", pitch)
                         .putFloat("rate", rate)
+                        .putString("voice", voice)
                         .apply();
-                applyVoice(pitch, rate);
+                runOnUiThread(() -> applyVoice(pitch, rate, voice));
             } catch (Exception ignored) {
                 // keep the previous preferences
             }
         }
 
         @JavascriptInterface
-        public void previewVoice(String text, double pitch, double rate) {
+        public void previewVoice(String text, double pitch, double rate, String voice) {
             if (!ttsReady) return;
-            applyVoice((float) pitch, (float) rate);
-            MainActivity.this.speak(text);
+            runOnUiThread(() -> {
+                applyVoice((float) pitch, (float) rate, voice);
+                MainActivity.this.speak(text);
+            });
+        }
+
+        @JavascriptInterface
+        public String getVoices() {
+            return voiceList();
+        }
+
+        @JavascriptInterface
+        public void downloadVoices() {
+            runOnUiThread(MainActivity.this::openVoiceDownloads);
         }
 
         @JavascriptInterface
