@@ -29,13 +29,14 @@ import java.util.concurrent.Executors;
  *
  * JS -> Android: window.Android.listen(), stopListening(), stop(), speak(text),
  *                getConfig(), saveConfig(host, code), savePrefs(json),
- *                previewVoice(text, pitch, rate)
+ *                previewVoice(text, pitch, rate), sendText(text), takePhoto(), clearPhoto()
  * Android -> JS: Face.setMode(mode), Face.setLevel(x), Face.setTalking(bool),
  *                Face.pulse(), Face.setStatus(text), Face.configResult(ok, msg)
  */
 public class MainActivity extends Activity {
 
     private static final int REQ_MIC = 1;
+    private static final int REQ_CAM = 2;
     private static final String PREFS = "jarvis";
 
     private WebView webView;
@@ -45,6 +46,8 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private boolean listenAfterPermission = false;
+    private final PhotoTaker photoTaker = new PhotoTaker();
+    private volatile String pendingImageId;  // photo waiting for the next question
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -125,14 +128,39 @@ public class MainActivity extends Activity {
         });
     }
 
+    private interface Question {
+        BridgeClient.Answer send(BridgeClient client, BridgeClient.Options options) throws BridgeClient.BridgeException;
+    }
+
+    private BridgeClient client() {
+        return new BridgeClient(prefs.getString("host", ""), prefs.getString("code", ""));
+    }
+
+    private BridgeClient.Options options() {
+        BridgeClient.Options o = new BridgeClient.Options();
+        o.model = prefs.getString("model", "sonnet");
+        o.edit = prefs.getBoolean("edit", false);
+        o.shell = o.edit && prefs.getBoolean("shell", false);
+        o.imageId = pendingImageId;
+        return o;
+    }
+
     private void askBridge(File audio, BridgeClient client) {
+        runQuestion((c, o) -> c.ask(audio, o));
+    }
+
+    private void runQuestion(Question question) {
         callJs("Face.setMode('thinking')");
         setStatus("Pensando…");
+        BridgeClient.Options o = options();
+        BridgeClient c = client();
         network.execute(() -> {
             try {
-                BridgeClient.Answer answer = client.ask(audio,
-                        prefs.getString("model", "sonnet"), prefs.getBoolean("edit", false),
-                        prefs.getBoolean("shell", false));
+                BridgeClient.Answer answer = question.send(c, o);
+                if (o.imageId != null && o.imageId.equals(pendingImageId)) {
+                    pendingImageId = null;
+                    callJs("Face.clearPhoto()");
+                }
                 callJs("Face.setMode('idle')");
                 setStatus(answer.heard.isEmpty() ? "" : "«" + answer.heard + "»");
                 speak(answer.reply);
@@ -140,6 +168,56 @@ public class MainActivity extends Activity {
                 callJs("Face.setMode('idle')");
                 setStatus(e.getMessage());
                 speak("Tengo un problema para conectarme con el computador.");
+            }
+        });
+    }
+
+    private boolean configured() {
+        if (prefs.getString("host", "").isEmpty() || prefs.getString("code", "").isEmpty()) {
+            callJs("Face.openSettings()");
+            return false;
+        }
+        return true;
+    }
+
+    private void sendText(String text) {
+        if (text == null || text.trim().isEmpty() || !configured()) return;
+        if (tts != null) tts.stop();
+        String t = text.trim();
+        runQuestion((c, o) -> c.chat(t, o));
+    }
+
+    private void takePhoto() {
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAM);
+            return;
+        }
+        if (!configured()) return;
+        setStatus("Mirando…");
+        callJs("Face.setMode('thinking')");
+        boolean front = !"back".equals(prefs.getString("camera", "front"));
+        photoTaker.take(front, new PhotoTaker.Callback() {
+            @Override public void onPhoto(byte[] jpeg) {
+                String thumb = android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP);
+                callJs("Face.showPhoto('data:image/jpeg;base64," + thumb + "')");
+                BridgeClient c = client();
+                network.execute(() -> {
+                    try {
+                        pendingImageId = c.uploadImage(jpeg);
+                        callJs("Face.setMode('idle')");
+                        setStatus("Listo. Pregúntame sobre la foto: toca la cara o escribe.");
+                    } catch (BridgeClient.BridgeException e) {
+                        callJs("Face.setMode('idle')");
+                        callJs("Face.clearPhoto()");
+                        setStatus(e.getMessage());
+                    }
+                });
+            }
+
+            @Override public void onError(String message) {
+                callJs("Face.setMode('idle')");
+                setStatus(message);
             }
         });
     }
@@ -152,6 +230,8 @@ public class MainActivity extends Activity {
 
     private void speak(String text) {
         if (!ttsReady || text == null || text.isEmpty()) return;
+        // Claude sometimes still uses Markdown; don't read the symbols aloud.
+        text = text.replaceAll("[*#`_>]+", "").replaceAll("\\[([^\\]]*)\\]\\([^)]*\\)", "$1");
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "u" + System.currentTimeMillis());
     }
 
@@ -162,6 +242,11 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQ_CAM) {
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) takePhoto();
+            else setStatus("Necesito permiso para usar la cámara");
+            return;
+        }
         if (requestCode != REQ_MIC) return;
         boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
         if (granted && listenAfterPermission) {
@@ -220,6 +305,21 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void sendText(String text) {
+            runOnUiThread(() -> MainActivity.this.sendText(text));
+        }
+
+        @JavascriptInterface
+        public void takePhoto() {
+            runOnUiThread(MainActivity.this::takePhoto);
+        }
+
+        @JavascriptInterface
+        public void clearPhoto() {
+            pendingImageId = null;
+        }
+
+        @JavascriptInterface
         public void stopListening() {
             runOnUiThread(listener::finish);
         }
@@ -246,6 +346,7 @@ public class MainActivity extends Activity {
                         .put("model", prefs.getString("model", "sonnet"))
                         .put("edit", prefs.getBoolean("edit", false))
                         .put("shell", prefs.getBoolean("shell", false))
+                        .put("camera", prefs.getString("camera", "front"))
                         .put("pitch", (double) prefs.getFloat("pitch", 1f))
                         .put("rate", (double) prefs.getFloat("rate", 1f))
                         .toString();
@@ -265,6 +366,7 @@ public class MainActivity extends Activity {
                         .putString("model", model)
                         .putBoolean("edit", p.optBoolean("edit", false))
                         .putBoolean("shell", p.optBoolean("edit", false) && p.optBoolean("shell", false))
+                        .putString("camera", "back".equals(p.optString("camera")) ? "back" : "front")
                         .putFloat("pitch", pitch)
                         .putFloat("rate", rate)
                         .apply();

@@ -10,6 +10,7 @@ Endpoints (all but /health need the X-Jarvis-Code header):
   GET  /health          -> {"ok": true, "app": "jarvis"}
   POST /ask   (audio)   -> {"heard": "...", "reply": "..."}
   POST /chat  (json)    -> {"reply": "..."}       body: {"text": "..."}
+  POST /image (jpeg)    -> {"id": "..."}          then send X-Jarvis-Image: id with /ask or /chat
   POST /reset           -> {"ok": true}           starts a new conversation
 """
 
@@ -31,6 +32,8 @@ HERE = Path(__file__).resolve().parent
 HOME = Path.home() / ".jarvis"
 WORKSPACE = HOME / "workspace"
 CONFIG_FILE = HOME / "config.json"
+IMAGES = WORKSPACE / "fotos"
+MAX_IMAGES = 30
 
 # A conversation is continued while you keep talking; after this many
 # seconds of silence, the next question starts a fresh one.
@@ -68,6 +71,14 @@ def load_config():
         cfg["code"] = f"{secrets.randbelow(10**6):06d}"
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return cfg
+
+
+def image_path(image_id):
+    """Map an id from /image back to its file, refusing anything else."""
+    if not image_id or not all(c.isalnum() or c == "-" for c in image_id):
+        return None
+    path = IMAGES / f"{image_id}.jpg"
+    return str(path) if path.is_file() else None
 
 
 def find_claude():
@@ -215,8 +226,13 @@ class Claude:
         with self._lock:
             self.session_id = None
 
-    def ask(self, text, model=None, edit=False, shell=False):
+    def ask(self, text, model=None, edit=False, shell=False, image=None):
         model = model if model in MODELS else self.model
+        if image:
+            text = (
+                f"{text}\n\n[Jorge te muestra una foto tomada ahora con la cámara de la tableta: {image} . "
+                "Mírala con la herramienta Read antes de responder.]"
+            )
         with self._lock:
             if time.time() - self.last_used > CONVERSATION_TIMEOUT:
                 self.session_id = None
@@ -231,7 +247,7 @@ class Claude:
                 tools = EDIT_TOOLS + (",Bash" if shell else "")
             else:
                 dirs = self.folders + self.edit_folders + ([self.projects_dir] if self.projects_dir else [])
-                tools = READ_TOOLS if dirs else "WebSearch"
+                tools = READ_TOOLS if (dirs or image) else "WebSearch"
             for folder in dirs:
                 args += ["--add-dir", folder]
             args += ["--tools", tools, "--allowedTools", tools]
@@ -297,6 +313,7 @@ def make_handler(cfg, transcriber, claude):
                 "model": self.headers.get("X-Jarvis-Model", "").strip().lower() or None,
                 "edit": self.headers.get("X-Jarvis-Edit", "") == "1",
                 "shell": self.headers.get("X-Jarvis-Shell", "") == "1",
+                "image": image_path(self.headers.get("X-Jarvis-Image", "")),
             }
 
         def _body(self):
@@ -325,6 +342,17 @@ def make_handler(cfg, transcriber, claude):
                     reply = claude.ask(text, **self._options())
                     log(f"Jarvis: {reply}")
                     self._json(200, {"heard": text, "reply": reply})
+                elif self.path == "/image":
+                    data = self._body()
+                    if not data.startswith(b"\xff\xd8"):
+                        return self._json(400, {"error": "La foto no llegó bien"})
+                    IMAGES.mkdir(parents=True, exist_ok=True)
+                    image_id = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
+                    (IMAGES / f"{image_id}.jpg").write_bytes(data)
+                    for old in sorted(IMAGES.glob("*.jpg"))[:-MAX_IMAGES]:
+                        old.unlink(missing_ok=True)
+                    log(f"Foto recibida ({len(data) // 1024} KB)")
+                    self._json(200, {"id": image_id})
                 elif self.path == "/reset":
                     claude.reset()
                     self._json(200, {"ok": True, "app": "jarvis"})
