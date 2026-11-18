@@ -1,0 +1,106 @@
+package com.megadisos.jarvis;
+
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+
+/** Minimal HTTP client for the Jarvis bridge running on the PC. */
+class BridgeClient {
+
+    static final int PORT = 8765;
+
+    static class Answer {
+        final String heard;
+        final String reply;
+        Answer(String heard, String reply) { this.heard = heard; this.reply = reply; }
+    }
+
+    static class BridgeException extends Exception {
+        BridgeException(String message) { super(message); }
+    }
+
+    private final String baseUrl;
+    private final String code;
+
+    BridgeClient(String host, String code) {
+        String h = host.trim();
+        if (!h.startsWith("http")) h = "http://" + h;
+        if (!h.substring(h.indexOf("//") + 2).contains(":")) h = h + ":" + PORT;
+        this.baseUrl = h;
+        this.code = code.trim();
+    }
+
+    void health() throws BridgeException {
+        request("GET", "/health", null, null, 5000);
+    }
+
+    /** Checks the address and the code together. */
+    void checkCode() throws BridgeException {
+        request("POST", "/reset", "application/json", "{}".getBytes(StandardCharsets.UTF_8), 8000);
+    }
+
+    Answer ask(File audio) throws BridgeException {
+        byte[] bytes;
+        try (InputStream in = new FileInputStream(audio)) {
+            bytes = readAll(in);
+        } catch (IOException e) {
+            throw new BridgeException("No pude leer la grabación");
+        }
+        JSONObject json = request("POST", "/ask", "audio/mp4", bytes, 200000);
+        return new Answer(json.optString("heard"), json.optString("reply"));
+    }
+
+    private JSONObject request(String method, String path, String type, byte[] body, int readTimeout)
+            throws BridgeException {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(baseUrl + path).openConnection();
+            conn.setRequestMethod(method);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(readTimeout);
+            conn.setRequestProperty("X-Jarvis-Code", code);
+            if (body != null) {
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", type);
+                conn.setFixedLengthStreamingMode(body.length);
+                try (OutputStream out = conn.getOutputStream()) {
+                    out.write(body);
+                }
+            }
+            int status = conn.getResponseCode();
+            InputStream in = status < 400 ? conn.getInputStream() : conn.getErrorStream();
+            String text = in == null ? "" : new String(readAll(in), StandardCharsets.UTF_8);
+            JSONObject json = text.isEmpty() ? new JSONObject() : new JSONObject(text);
+            if (status >= 400) {
+                throw new BridgeException(json.optString("error", "El PC respondió con error " + status));
+            }
+            return json;
+        } catch (BridgeException e) {
+            throw e;
+        } catch (java.net.SocketTimeoutException e) {
+            throw new BridgeException("El PC tardó demasiado en responder");
+        } catch (IOException e) {
+            throw new BridgeException("No encuentro el PC. ¿Está encendido Jarvis en el PC y en el mismo wifi?");
+        } catch (Exception e) {
+            throw new BridgeException("Respuesta extraña del PC");
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private static byte[] readAll(InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        return out.toByteArray();
+    }
+}
