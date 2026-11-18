@@ -136,3 +136,5 @@ html, body {
   background: var(--warn);
 }
 #badge[hidden] { display: none; }
+#settings label.check.disabled { opacity: 0.4; }
+#badge.shell { background: #ff7a59; }

@@ -216,7 +216,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var settingsEl = $('settings');
   var hostEl = $('host'), portEl = $('port'), codeEl = $('code');
-  var modelEl = $('model'), editEl = $('edit');
+  var modelEl = $('model'), editEl = $('edit'), shellEl = $('shell');
   var pitchEl = $('pitch'), rateEl = $('rate');
   var msgEl = $('settings-msg'), saveEl = $('save');
   var DEFAULT_PORT = '8737';
@@ -228,7 +228,18 @@
     $('pitch-val').textContent = '(' + Number(pitchEl.value).toFixed(2) + ')';
     $('rate-val').textContent = '(' + Number(rateEl.value).toFixed(2) + ')';
   }
-  function setBadge(on) { $('badge').hidden = !on; }
+  function setBadge(edit, shell) {
+    var badge = $('badge');
+    badge.hidden = !edit;
+    badge.textContent = edit && shell ? '✎ Edición + terminal' : '✎ Modo edición';
+    badge.className = edit && shell ? 'shell' : '';
+  }
+  function syncShell() {
+    shellEl.disabled = !editEl.checked;
+    if (!editEl.checked) shellEl.checked = false;
+    $('shell-row').className = 'check' + (editEl.checked ? '' : ' disabled');
+  }
+  editEl.addEventListener('change', syncShell);
 
   function openSettings() {
     var cfg = readConfig();
@@ -240,6 +251,8 @@
     codeEl.value = cfg.code || '';
     modelEl.value = cfg.model || 'sonnet';
     editEl.checked = !!cfg.edit;
+    shellEl.checked = !!cfg.shell;
+    syncShell();
     pitchEl.value = cfg.pitch || 1;
     rateEl.value = cfg.rate || 1;
     showVoiceValues();
@@ -254,6 +267,7 @@
     return {
       model: modelEl.value,
       edit: editEl.checked,
+      shell: editEl.checked && shellEl.checked,
       pitch: Number(pitchEl.value),
       rate: Number(rateEl.value)
     };
@@ -284,7 +298,7 @@
     }
     var p = prefs();
     window.Android.savePrefs(JSON.stringify(p));
-    setBadge(p.edit);
+    setBadge(p.edit, p.shell);
     if (!hostEl.value.trim() || !codeEl.value.trim()) {
       msgEl.textContent = 'Guardado. Falta la IP y el código para conectar con el PC.';
       msgEl.className = 'error';
@@ -298,7 +312,7 @@
     window.Android.saveConfig(host, codeEl.value);
   });
 
-  setBadge(!!readConfig().edit);
+  (function () { var c = readConfig(); setBadge(!!c.edit, !!c.shell); })();
 
   window.Face = {
     setTalking: function (on) {

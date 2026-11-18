@@ -58,7 +58,10 @@ Las carpetas quedan guardadas y la ventana las muestra al arrancar.
 
 - **Normal:** Jarvis puede leer y buscar en todas tus carpetas, pero no cambia nada.
 - **Modo edición** (se activa en el ⚙ de la tableta, y arriba a la izquierda aparece "✎ Modo edición"): puede crear y modificar archivos en las carpetas editables y crear **proyectos nuevos** en `%USERPROFILE%\JarvisProyectos`. Puedes cambiar esa carpeta con `--projects-dir "E:\ruta"`. Antes de cambiar algo te dice qué va a hacer y espera tu "sí". En este modo no ve las carpetas de solo lectura.
-- Nunca puede ejecutar comandos, instalar paquetes ni usar git. Te recomiendo usar git en tus proyectos editables para poder deshacer cualquier cambio.
+- **Terminal** (otro interruptor en el ⚙, solo funciona con el modo edición activo): además puede ejecutar comandos en tu PC, por ejemplo instalar paquetes, usar git o correr tu proyecto. Antes de cada comando te dice cuál es y espera tu "sí". Siempre están bloqueados: borrar carpetas (`rm -r`, `rd /s`, `del /s`, `Remove-Item`), `git push`, `git reset --hard`, `git clean`, `format`, `diskpart` y `shutdown`.
+  - En Windows, Claude Code usa **Git for Windows** para la terminal. Si no lo tienes, instálalo desde https://git-scm.com.
+  - Ojo: los comandos corren con tus permisos de usuario y no quedan limitados a una carpeta. Actívala solo cuando la necesites.
+- Usa git en tus proyectos editables para poder deshacer cualquier cambio.
 
 ## Cambiar de modelo
 

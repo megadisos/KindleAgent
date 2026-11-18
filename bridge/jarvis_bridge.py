@@ -154,6 +154,15 @@ class Transcriber:
 MODELS = ("haiku", "sonnet", "opus")
 READ_TOOLS = "WebSearch,Read,Glob,Grep"
 EDIT_TOOLS = "WebSearch,Read,Glob,Grep,Edit,Write"
+# Commands blocked even when the terminal is on: easy to trigger by a
+# misheard sentence and hard to undo.
+BLOCKED_COMMANDS = [
+    "Bash(rm -rf:*)", "Bash(rm -r:*)", "Bash(rm -fr:*)",
+    "Bash(rmdir /s:*)", "Bash(rd /s:*)", "Bash(del /s:*)",
+    "Bash(Remove-Item:*)", "Bash(format:*)", "Bash(diskpart:*)",
+    "Bash(shutdown:*)", "Bash(git push:*)", "Bash(git reset --hard:*)",
+    "Bash(git clean:*)",
+]
 
 
 def _existing_dirs(paths):
@@ -197,6 +206,8 @@ class Claude:
         text += (
             "\nEl modo edición lo activa Jorge desde la tableta. Si no tienes las herramientas Edit y Write, "
             "no está activo: díselo en una frase. En modo edición, las carpetas de solo lectura no están disponibles.\n"
+            "La terminal (Bash) solo está disponible si Jorge la activa además del modo edición. "
+            "Trabaja siempre dentro de las carpetas editables o de proyectos.\n"
         )
         return text
 
@@ -204,7 +215,7 @@ class Claude:
         with self._lock:
             self.session_id = None
 
-    def ask(self, text, model=None, edit=False):
+    def ask(self, text, model=None, edit=False, shell=False):
         model = model if model in MODELS else self.model
         with self._lock:
             if time.time() - self.last_used > CONVERSATION_TIMEOUT:
@@ -214,15 +225,18 @@ class Claude:
                 "--output-format", "json",
                 "--model", model,
             ]
+            shell = shell and edit  # the terminal only exists inside edit mode
             if edit:
                 dirs = self.edit_folders + ([self.projects_dir] if self.projects_dir else [])
-                tools = EDIT_TOOLS
+                tools = EDIT_TOOLS + (",Bash" if shell else "")
             else:
                 dirs = self.folders + self.edit_folders + ([self.projects_dir] if self.projects_dir else [])
                 tools = READ_TOOLS if dirs else "WebSearch"
             for folder in dirs:
                 args += ["--add-dir", folder]
             args += ["--tools", tools, "--allowedTools", tools]
+            if shell:
+                args += ["--disallowedTools", *BLOCKED_COMMANDS]
             if self.session_id:
                 args += ["--resume", self.session_id]
 
@@ -231,7 +245,7 @@ class Claude:
             # never bills an API key that happens to be set on this PC.
             env.pop("ANTHROPIC_API_KEY", None)
 
-            log(f"Modelo: {model}{' · MODO EDICIÓN' if edit else ''}")
+            log(f"Modelo: {model}{' · MODO EDICIÓN' if edit else ''}{' + TERMINAL' if shell else ''}")
             started = time.time()
             proc = subprocess.run(
                 args, input=text, capture_output=True, text=True,
@@ -282,6 +296,7 @@ def make_handler(cfg, transcriber, claude):
             return {
                 "model": self.headers.get("X-Jarvis-Model", "").strip().lower() or None,
                 "edit": self.headers.get("X-Jarvis-Edit", "") == "1",
+                "shell": self.headers.get("X-Jarvis-Shell", "") == "1",
             }
 
         def _body(self):

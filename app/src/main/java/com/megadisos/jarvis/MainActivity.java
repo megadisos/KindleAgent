@@ -131,7 +131,8 @@ public class MainActivity extends Activity {
         network.execute(() -> {
             try {
                 BridgeClient.Answer answer = client.ask(audio,
-                        prefs.getString("model", "sonnet"), prefs.getBoolean("edit", false));
+                        prefs.getString("model", "sonnet"), prefs.getBoolean("edit", false),
+                        prefs.getBoolean("shell", false));
                 callJs("Face.setMode('idle')");
                 setStatus(answer.heard.isEmpty() ? "" : "«" + answer.heard + "»");
                 speak(answer.reply);
@@ -244,6 +245,7 @@ public class MainActivity extends Activity {
                         .put("code", prefs.getString("code", ""))
                         .put("model", prefs.getString("model", "sonnet"))
                         .put("edit", prefs.getBoolean("edit", false))
+                        .put("shell", prefs.getBoolean("shell", false))
                         .put("pitch", (double) prefs.getFloat("pitch", 1f))
                         .put("rate", (double) prefs.getFloat("rate", 1f))
                         .toString();
@@ -262,6 +264,7 @@ public class MainActivity extends Activity {
                 prefs.edit()
                         .putString("model", model)
                         .putBoolean("edit", p.optBoolean("edit", false))
+                        .putBoolean("shell", p.optBoolean("edit", false) && p.optBoolean("shell", false))
                         .putFloat("pitch", pitch)
                         .putFloat("rate", rate)
                         .apply();
