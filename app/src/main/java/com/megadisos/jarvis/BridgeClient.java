@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 /** Minimal HTTP client for the Jarvis bridge running on the PC. */
 class BridgeClient {
 
-    static final int PORT = 8765;
+    static final int PORT = 8737;
 
     static class Answer {
         final String heard;
@@ -44,6 +44,17 @@ class BridgeClient {
 
     /** Checks the address and the code together. */
     void checkCode() throws BridgeException {
+        JSONObject health;
+        try {
+            health = request("GET", "/health", null, null, 5000);
+        } catch (BridgeException e) {
+            if (e.getMessage().startsWith("No encuentro")) throw e;
+            health = new JSONObject(); // something answered, but not Jarvis
+        }
+        if (!"jarvis".equals(health.optString("app"))) {
+            throw new BridgeException("En esa IP y puerto responde otro programa, no Jarvis. "
+                    + "Revisa la IP:puerto que muestra la ventana de Jarvis en el PC.");
+        }
         request("POST", "/reset", "application/json", "{}".getBytes(StandardCharsets.UTF_8), 8000);
     }
 
