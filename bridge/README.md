@@ -44,6 +44,16 @@ Puedes pasar opciones al `.bat` desde una terminal, por ejemplo `iniciar_jarvis.
 - `--whisper base`: reconocimiento de voz más rápido pero menos preciso. `medium` es más preciso pero más lento. Por defecto `small`.
 - `--device cuda`: usa tu tarjeta NVIDIA para Whisper, si tienes una.
 
+## Darle acceso a tus proyectos (solo lectura)
+
+Por defecto Jarvis está encerrado en su propia carpeta. Para que pueda leer un proyecto y contestarte preguntas sobre él, abre una terminal en la carpeta de Jarvis y ejecuta, una sola vez:
+
+```
+.\iniciar_jarvis.bat --add-folder "E:\ruta\a\tu\proyecto"
+```
+
+La carpeta queda guardada y la ventana la muestra al arrancar. Puedes agregar varias. Para quitar una: `--remove-folder "E:\ruta"`. Jarvis puede leer y buscar en esas carpetas, pero no modificar archivos ni ejecutar comandos.
+
 ## Bueno saber
 
 - La personalidad de Jarvis está en `persona.md`. Puedes editarla y reiniciar el puente.

@@ -152,9 +152,11 @@ class Transcriber:
 class Claude:
     """Talks to Claude through the Claude Code CLI in print mode."""
 
-    def __init__(self, claude_cmd, model):
+    def __init__(self, claude_cmd, model, folders=()):
         self.cmd = claude_cmd
         self.model = model
+        # Project folders Jarvis may read (never write): ~/.jarvis/config.json "folders".
+        self.folders = [str(Path(f).expanduser()) for f in folders if Path(f).expanduser().is_dir()]
         self.session_id = None
         self.last_used = 0.0
         self._lock = threading.Lock()
@@ -175,9 +177,14 @@ class Claude:
                 self.cmd, "-p",
                 "--output-format", "json",
                 "--model", self.model,
-                "--tools", "WebSearch",
-                "--allowedTools", "WebSearch",
             ]
+            if self.folders:
+                tools = "WebSearch,Read,Glob,Grep"
+                for folder in self.folders:
+                    args += ["--add-dir", folder]
+            else:
+                tools = "WebSearch"
+            args += ["--tools", tools, "--allowedTools", tools]
             if self.session_id:
                 args += ["--resume", self.session_id]
 
@@ -297,6 +304,10 @@ def main():
     parser.add_argument("--whisper", default="small", help="Modelo de Whisper: base, small, medium...")
     parser.add_argument("--device", default="cpu", help="cpu o cuda (si tienes tarjeta NVIDIA)")
     parser.add_argument("--claude", default=None, help="Ruta al comando claude si no está en el PATH")
+    parser.add_argument("--add-folder", action="append", default=[], metavar="RUTA",
+                        help="Deja que Jarvis lea esta carpeta de proyecto (se guarda para la próxima vez)")
+    parser.add_argument("--remove-folder", action="append", default=[], metavar="RUTA",
+                        help="Quita una carpeta de la lista")
     args = parser.parse_args()
 
     claude_cmd = args.claude or find_claude()
@@ -304,8 +315,20 @@ def main():
         sys.exit("No encontré Claude Code. Instálalo y ejecuta 'claude' una vez para iniciar sesión.")
 
     cfg = load_config()
+    folders = cfg.get("folders", [])
+    for f in args.add_folder:
+        path = str(Path(f).expanduser().resolve())
+        if not Path(path).is_dir():
+            sys.exit(f"No existe la carpeta: {path}")
+        if path not in folders:
+            folders.append(path)
+    removed = {str(Path(f).expanduser().resolve()) for f in args.remove_folder}
+    folders = [f for f in folders if f not in removed]
+    if folders != cfg.get("folders", []):
+        cfg["folders"] = folders
+        CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     transcriber = Transcriber(args.whisper, args.device)
-    claude = Claude(claude_cmd, args.model)
+    claude = Claude(claude_cmd, args.model, folders)
     try:
         server = BridgeServer(("0.0.0.0", args.port), make_handler(cfg, transcriber, claude))
     except OSError:
@@ -320,6 +343,10 @@ def main():
     print("=" * 52)
     print("  Jarvis está escuchando")
     print(f"  En la tableta escribe:  IP {lan_ip()}   puerto {args.port}   código {cfg['code']}")
+    if claude.folders:
+        print("  Puede leer (sin modificar):")
+        for f in claude.folders:
+            print(f"    - {f}")
     print("  (Ctrl+C para apagar)")
     print("=" * 52)
     print(flush=True)
