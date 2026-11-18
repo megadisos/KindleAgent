@@ -28,9 +28,9 @@ Fire 7 ──(audio por wifi)──▶ PC: Whisper (voz a texto) ──▶ Claud
 2. Si Windows pregunta por el **firewall**, permite el acceso en **redes privadas**.
 3. La ventana muestra algo así:
    ```
-   En la tableta escribe:  IP 192.168.1.20   código 123456
+   En la tableta escribe:  IP 192.168.1.20   puerto 8737   código 123456
    ```
-4. En la tableta, toca el engranaje ⚙ (arriba a la derecha) o mantén presionada la cara, escribe esa IP y ese código y toca **Conectar**.
+4. En la tableta, toca el engranaje ⚙ (arriba a la derecha) o mantén presionada la cara, escribe esa IP, el puerto y el código, y toca **Conectar**.
 5. Toca la cara, habla, y espera la respuesta.
 
 Deja la ventana abierta mientras uses a Jarvis. En la ventana verás lo que entendió y lo que respondió.
@@ -39,6 +39,7 @@ Deja la ventana abierta mientras uses a Jarvis. En la ventana verás lo que ente
 
 Puedes pasar opciones al `.bat` desde una terminal, por ejemplo `iniciar_jarvis.bat --model haiku`:
 
+- `--port 8738`: usa otro puerto si la ventana dice que el 8737 está ocupado. En la tableta cambia el puerto al mismo número.
 - `--model haiku`: respuestas más rápidas y gasta menos de tu límite de Pro. Por defecto usa `sonnet`.
 - `--whisper base`: reconocimiento de voz más rápido pero menos preciso. `medium` es más preciso pero más lento. Por defecto `small`.
 - `--device cuda`: usa tu tarjeta NVIDIA para Whisper, si tienes una.

@@ -11,8 +11,8 @@ android {
         // Fire 7 (2019+) runs Fire OS 7/8, based on Android 9/11.
         minSdk 22
         targetSdk 34
-        versionCode 2
-        versionName '0.2.0'
+        versionCode 3
+        versionName '0.2.2'
     }
 
     signingConfigs {

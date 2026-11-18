@@ -7,7 +7,7 @@ subscription you are signed in with, not the paid API) and returns the reply
 as JSON for the tablet to speak.
 
 Endpoints (all but /health need the X-Jarvis-Code header):
-  GET  /health          -> {"ok": true}
+  GET  /health          -> {"ok": true, "app": "jarvis"}
   POST /ask   (audio)   -> {"heard": "...", "reply": "..."}
   POST /chat  (json)    -> {"reply": "..."}       body: {"text": "..."}
   POST /reset           -> {"ok": true}           starts a new conversation
@@ -36,6 +36,20 @@ CONFIG_FILE = HOME / "config.json"
 # seconds of silence, the next question starts a fresh one.
 CONVERSATION_TIMEOUT = 15 * 60
 MAX_AUDIO_BYTES = 20 * 1024 * 1024
+DEFAULT_PORT = 8737
+
+
+class BridgeServer(ThreadingHTTPServer):
+    # http.server turns on SO_REUSEADDR, which on Windows lets two programs
+    # share a port silently (the other one may answer the tablet). Refuse
+    # instead, and on Windows ask for the port exclusively.
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 def log(*args):
@@ -80,6 +94,30 @@ def lan_ip():
         s.close()
 
 
+def decode_audio(path, rate=16000):
+    """Decode any audio file to 16 kHz mono float32 for Whisper.
+
+    faster-whisper's own decoder passes an option that newer PyAV releases
+    removed ("metadata_errors"), so we decode with PyAV ourselves.
+    """
+    import av
+    import numpy as np
+
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=rate)
+    chunks = []
+    with av.open(str(path)) as container:
+        for frame in container.decode(audio=0):
+            out = resampler.resample(frame)
+            for f in out if isinstance(out, list) else [out]:
+                chunks.append(f.to_ndarray().reshape(-1))
+        out = resampler.resample(None)  # flush what is left in the resampler
+        for f in out if isinstance(out, list) else ([out] if out is not None else []):
+            chunks.append(f.to_ndarray().reshape(-1))
+    if not chunks:
+        return np.zeros(0, dtype=np.float32)
+    return np.concatenate(chunks).astype(np.float32) / 32768.0
+
+
 class Transcriber:
     """Local speech-to-text with faster-whisper. The model loads on first use."""
 
@@ -102,8 +140,11 @@ class Transcriber:
 
     def transcribe(self, audio_path):
         model = self.load()
+        audio = decode_audio(audio_path)
+        if audio.size < 1600:  # less than 0.1 s
+            return ""
         segments, _ = model.transcribe(
-            str(audio_path), language="es", vad_filter=True, beam_size=5
+            audio, language="es", vad_filter=True, beam_size=5
         )
         return " ".join(seg.text.strip() for seg in segments).strip()
 
@@ -174,6 +215,9 @@ def make_handler(cfg, transcriber, claude):
         def log_message(self, fmt, *args):
             pass  # we log our own lines
 
+        def log_request(self, code="-", size="-"):
+            log(f"Conexión de {self.client_address[0]}: {self.command} {self.path} -> {code}")
+
         def _json(self, status, payload):
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
@@ -196,7 +240,7 @@ def make_handler(cfg, transcriber, claude):
 
         def do_GET(self):
             if self.path == "/health":
-                self._json(200, {"ok": True})
+                self._json(200, {"ok": True, "app": "jarvis"})
             else:
                 self._json(404, {"error": "No existe"})
 
@@ -216,7 +260,7 @@ def make_handler(cfg, transcriber, claude):
                     self._json(200, {"heard": text, "reply": reply})
                 elif self.path == "/reset":
                     claude.reset()
-                    self._json(200, {"ok": True})
+                    self._json(200, {"ok": True, "app": "jarvis"})
                 else:
                     self._json(404, {"error": "No existe"})
             except subprocess.TimeoutExpired:
@@ -248,7 +292,7 @@ def make_handler(cfg, transcriber, claude):
 
 def main():
     parser = argparse.ArgumentParser(description="Puente entre la tableta Jarvis y Claude")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--model", default="sonnet", help="Modelo de Claude: sonnet, haiku u opus")
     parser.add_argument("--whisper", default="small", help="Modelo de Whisper: base, small, medium...")
     parser.add_argument("--device", default="cpu", help="cpu o cuda (si tienes tarjeta NVIDIA)")
@@ -262,17 +306,23 @@ def main():
     cfg = load_config()
     transcriber = Transcriber(args.whisper, args.device)
     claude = Claude(claude_cmd, args.model)
+    try:
+        server = BridgeServer(("0.0.0.0", args.port), make_handler(cfg, transcriber, claude))
+    except OSError:
+        sys.exit(
+            f"El puerto {args.port} ya lo está usando otro programa de esta PC.\n"
+            f"Prueba con otro, por ejemplo:  iniciar_jarvis.bat --port {args.port + 1}"
+        )
     # Load Whisper in the background so the first question is not slow.
     threading.Thread(target=transcriber.load, daemon=True).start()
 
-    server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(cfg, transcriber, claude))
     print()
     print("=" * 52)
     print("  Jarvis está escuchando")
-    print(f"  En la tableta escribe:  IP {lan_ip()}   código {cfg['code']}")
+    print(f"  En la tableta escribe:  IP {lan_ip()}   puerto {args.port}   código {cfg['code']}")
     print("  (Ctrl+C para apagar)")
     print("=" * 52)
-    print()
+    print(flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
