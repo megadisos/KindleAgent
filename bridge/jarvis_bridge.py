@@ -54,6 +54,21 @@ def load_config():
     return cfg
 
 
+def find_claude():
+    """Claude Code's Windows installer does not always add itself to PATH."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for candidate in (
+        Path.home() / ".local" / "bin" / "claude.exe",
+        Path.home() / ".local" / "bin" / "claude",
+        Path(os.environ.get("APPDATA", "")) / "npm" / "claude.cmd",
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def lan_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -240,7 +255,7 @@ def main():
     parser.add_argument("--claude", default=None, help="Ruta al comando claude si no está en el PATH")
     args = parser.parse_args()
 
-    claude_cmd = args.claude or shutil.which("claude")
+    claude_cmd = args.claude or find_claude()
     if not claude_cmd:
         sys.exit("No encontré Claude Code. Instálalo y ejecuta 'claude' una vez para iniciar sesión.")
 

@@ -14,6 +14,12 @@ Fire 7 ──(audio por wifi)──▶ PC: Whisper (voz a texto) ──▶ Claud
    irm https://claude.ai/install.ps1 | iex
    ```
    Luego cierra y abre PowerShell, escribe `claude` y sigue los pasos para **iniciar sesión con tu cuenta de Claude** (la del plan Pro). Cuando veas el chat de Claude Code ya puedes salir con `/exit`.
+
+   Si PowerShell dice que **`claude` no se reconoce**, el instalador no lo agregó a la ruta. Pega esto, cierra y vuelve a abrir PowerShell:
+   ```
+   [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path","User") + ";$env:USERPROFILE\.local\bin", "User")
+   ```
+   Si Claude Code pide **Git**, instálalo desde https://git-scm.com con las opciones por defecto.
 3. **Este repo**: descárgalo con el botón verde **Code → Download ZIP** en GitHub y descomprímelo, por ejemplo en `Documentos\KindleAgent`.
 
 ## Usar
