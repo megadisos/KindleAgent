@@ -10,24 +10,52 @@
   <canvas id="face"></canvas>
   <div id="status">Toca la cara para hablar</div>
   <button id="gear" aria-label="Configuración">⚙</button>
+  <div id="badge" hidden>✎ Modo edición</div>
 
   <div id="settings" hidden>
     <form id="settings-form">
-      <h1>Conectar con el PC</h1>
-      <p>Abre Jarvis en tu PC y escribe aquí lo que muestra la ventana.</p>
-      <label>IP del PC
-        <input id="host" inputmode="decimal" autocomplete="off" placeholder="192.168.1.20">
-      </label>
-      <label>Puerto
-        <input id="port" inputmode="numeric" autocomplete="off" placeholder="8737">
-      </label>
+      <h1>Configuración</h1>
+
+      <h2>Conexión con el PC</h2>
+      <p>Escribe lo que muestra la ventana de Jarvis en tu PC.</p>
+      <div class="row">
+        <label class="grow">IP del PC
+          <input id="host" inputmode="decimal" autocomplete="off" placeholder="192.168.1.20">
+        </label>
+        <label class="small">Puerto
+          <input id="port" inputmode="numeric" autocomplete="off" placeholder="8737">
+        </label>
+      </div>
       <label>Código
         <input id="code" inputmode="numeric" autocomplete="off" placeholder="123456">
       </label>
+
+      <h2>Cerebro</h2>
+      <label>Modelo de Claude
+        <select id="model">
+          <option value="haiku">Haiku: el más rápido</option>
+          <option value="sonnet">Sonnet: equilibrado</option>
+          <option value="opus">Opus: el más inteligente (más lento)</option>
+        </select>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="edit">
+        <span><b>Modo edición</b>: puede modificar tus proyectos editables y crear proyectos nuevos. Te pregunta antes de cambiar algo.</span>
+      </label>
+
+      <h2>Voz</h2>
+      <label>Tono <span id="pitch-val"></span>
+        <input type="range" id="pitch" min="0.5" max="1.5" step="0.05">
+      </label>
+      <label>Velocidad <span id="rate-val"></span>
+        <input type="range" id="rate" min="0.5" max="1.6" step="0.05">
+      </label>
+      <button type="button" id="preview" class="link">▶ Probar voz</button>
+
       <div id="settings-msg" role="status"></div>
       <div class="buttons">
         <button type="button" id="cancel">Cerrar</button>
-        <button type="submit" id="save">Conectar</button>
+        <button type="submit" id="save">Guardar</button>
       </div>
     </form>
   </div>
