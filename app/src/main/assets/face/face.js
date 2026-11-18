@@ -342,6 +342,9 @@
     if (window.Android && window.Android.toggleCamera) window.Android.toggleCamera();
     else setStatus('La cámara solo funciona en la tableta.');
   });
+  $('flip-btn').addEventListener('click', function () {
+    if (window.Android && window.Android.flipCamera) window.Android.flipCamera();
+  });
 
   window.Face = {
     setTalking: function (on) {
@@ -363,7 +366,9 @@
     openSettings: openSettings,
     setCameraOn: function (on) {
       cameraOn = !!on;
+      if (on === 'front' || on === 'back') cameraEl.value = on;
       $('cam-btn').classList.toggle('on', cameraOn);
+      $('flip-btn').hidden = !cameraOn;
     },
     configResult: function (ok, message) {
       msgEl.textContent = message;

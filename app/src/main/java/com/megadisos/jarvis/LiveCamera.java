@@ -53,7 +53,7 @@ class LiveCamera implements TextureView.SurfaceTextureListener {
 
     /** @return an error message, or null when the camera is running. */
     String start(boolean useFront) {
-        stop();
+        release();  // keep the window up so switching cameras doesn't flicker
         front = useFront;
         int id = find(front ? Camera.CameraInfo.CAMERA_FACING_FRONT : Camera.CameraInfo.CAMERA_FACING_BACK);
         if (id < 0) id = find(front ? Camera.CameraInfo.CAMERA_FACING_BACK : Camera.CameraInfo.CAMERA_FACING_FRONT);
@@ -82,12 +82,16 @@ class LiveCamera implements TextureView.SurfaceTextureListener {
     }
 
     void stop() {
+        release();
+        view.setVisibility(View.GONE);
+    }
+
+    private void release() {
         if (camera != null) {
             try { camera.stopPreview(); } catch (RuntimeException ignored) { }
             camera.release();
             camera = null;
         }
-        view.setVisibility(View.GONE);
     }
 
     /** Grab what the camera sees right now. Must be called on the UI thread. */

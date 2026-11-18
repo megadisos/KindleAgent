@@ -156,6 +156,7 @@ html, body {
   color: var(--accent);
   font-size: 28px;
 }
+#dock button[hidden] { display: none; }
 #dock button.on {
   background: var(--accent);
   color: #00222c;

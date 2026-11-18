@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
  *
  * JS -> Android: window.Android.listen(), stopListening(), stop(), speak(text),
  *                getConfig(), saveConfig(host, code), savePrefs(json),
- *                previewVoice(text, pitch, rate), sendText(text), toggleCamera(), setTyping(on)
+ *                previewVoice(text, pitch, rate), sendText(text), toggleCamera(), flipCamera(), setTyping(on)
  * Android -> JS: Face.setMode(mode), Face.setLevel(x), Face.setTalking(bool),
  *                Face.pulse(), Face.setStatus(text), Face.configResult(ok, msg)
  */
@@ -224,6 +224,21 @@ public class MainActivity extends Activity {
         setStatus("Cámara encendida: veré lo que tenga enfrente cuando me hables o escribas");
     }
 
+    /** Switch between the front and back camera while it is on. */
+    private void flipCamera() {
+        String next = "back".equals(prefs.getString("camera", "front")) ? "front" : "back";
+        prefs.edit().putString("camera", next).apply();
+        if (!liveCamera.isOn()) return;
+        String error = liveCamera.start("front".equals(next));
+        if (error != null) {
+            callJs("Face.setCameraOn(false)");
+            setStatus(error);
+            return;
+        }
+        callJs("Face.setCameraOn('" + next + "')");
+        setStatus("front".equals(next) ? "Cámara frontal" : "Cámara trasera");
+    }
+
     private void applyVoice(float pitch, float rate) {
         if (tts == null) return;
         tts.setPitch(pitch);
@@ -325,6 +340,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void toggleCamera() {
             runOnUiThread(MainActivity.this::toggleCamera);
+        }
+
+        @JavascriptInterface
+        public void flipCamera() {
+            runOnUiThread(MainActivity.this::flipCamera);
         }
 
         @JavascriptInterface
