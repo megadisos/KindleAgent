@@ -54,6 +54,10 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (!prefs.getBoolean("camera_back_default", false)) {
+            // From 0.6.1 the back camera is the default, also for earlier installs.
+            prefs.edit().putString("camera", "back").putBoolean("camera_back_default", true).apply();
+        }
         listener = new Listener(this);
 
         webView = new WebView(this);
@@ -215,7 +219,7 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAM);
             return;
         }
-        String error = liveCamera.start(!"back".equals(prefs.getString("camera", "front")));
+        String error = liveCamera.start("front".equals(camera()));
         if (error != null) {
             setStatus(error);
             return;
@@ -224,9 +228,14 @@ public class MainActivity extends Activity {
         setStatus("Cámara encendida: veré lo que tenga enfrente cuando me hables o escribas");
     }
 
+    /** "front" or "back" (the default). */
+    private String camera() {
+        return "front".equals(prefs.getString("camera", "back")) ? "front" : "back";
+    }
+
     /** Switch between the front and back camera while it is on. */
     private void flipCamera() {
-        String next = "back".equals(prefs.getString("camera", "front")) ? "front" : "back";
+        String next = "back".equals(camera()) ? "front" : "back";
         prefs.edit().putString("camera", next).apply();
         if (!liveCamera.isOn()) return;
         String error = liveCamera.start("front".equals(next));
@@ -379,7 +388,7 @@ public class MainActivity extends Activity {
                         .put("model", prefs.getString("model", "sonnet"))
                         .put("edit", prefs.getBoolean("edit", false))
                         .put("shell", prefs.getBoolean("shell", false))
-                        .put("camera", prefs.getString("camera", "front"))
+                        .put("camera", camera())
                         .put("pitch", (double) prefs.getFloat("pitch", 1f))
                         .put("rate", (double) prefs.getFloat("rate", 1f))
                         .toString();
@@ -399,7 +408,7 @@ public class MainActivity extends Activity {
                         .putString("model", model)
                         .putBoolean("edit", p.optBoolean("edit", false))
                         .putBoolean("shell", p.optBoolean("edit", false) && p.optBoolean("shell", false))
-                        .putString("camera", "back".equals(p.optString("camera")) ? "back" : "front")
+                        .putString("camera", "front".equals(p.optString("camera")) ? "front" : "back")
                         .putFloat("pitch", pitch)
                         .putFloat("rate", rate)
                         .apply();

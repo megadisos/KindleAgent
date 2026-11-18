@@ -252,7 +252,7 @@
     modelEl.value = cfg.model || 'sonnet';
     editEl.checked = !!cfg.edit;
     shellEl.checked = !!cfg.shell;
-    cameraEl.value = cfg.camera === 'back' ? 'back' : 'front';
+    cameraEl.value = cfg.camera === 'front' ? 'front' : 'back';
     syncShell();
     pitchEl.value = cfg.pitch || 1;
     rateEl.value = cfg.rate || 1;

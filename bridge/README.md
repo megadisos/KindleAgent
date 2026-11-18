@@ -66,7 +66,7 @@ Las carpetas quedan guardadas y la ventana las muestra al arrancar.
 ## Escribir y cámara en vivo
 
 - **⌨ Teclado:** abre una barra arriba para escribirle cuando no te entiende bien por voz.
-- **📷 Cámara en vivo:** prende la cámara de la tableta (frontal o trasera, se elige en el ⚙) y muestra lo que ve en una ventanita arriba a la izquierda. Mientras esté prendida, cada vez que le hables o escribas, Jarvis toma el cuadro de ese momento y lo mira junto con tu pregunta. Si escribes sin texto, pregunta "¿Qué ves?". El botón 🔄 que aparece al lado cambia entre la cámara frontal y la trasera al instante. Otro toque al 📷 la apaga (también se apaga sola si sales de la app). No es video continuo: Claude mira una imagen por pregunta.
+- **📷 Cámara en vivo:** prende la cámara de la tableta (trasera por defecto; también se elige en el ⚙) y muestra lo que ve en una ventanita arriba a la izquierda. Mientras esté prendida, cada vez que le hables o escribas, Jarvis toma el cuadro de ese momento y lo mira junto con tu pregunta. Si escribes sin texto, pregunta "¿Qué ves?". El botón 🔄 que aparece al lado cambia entre la cámara frontal y la trasera al instante. Otro toque al 📷 la apaga (también se apaga sola si sales de la app). No es video continuo: Claude mira una imagen por pregunta.
 - Las fotos se guardan en `%USERPROFILE%\.jarvis\workspace\fotos`. Solo se guardan las últimas 30.
 
 ## Cambiar de modelo
