@@ -216,7 +216,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var settingsEl = $('settings');
   var hostEl = $('host'), portEl = $('port'), codeEl = $('code');
-  var modelEl = $('model'), editEl = $('edit'), shellEl = $('shell');
+  var modelEl = $('model'), editEl = $('edit'), shellEl = $('shell'), cameraEl = $('camera');
   var pitchEl = $('pitch'), rateEl = $('rate');
   var msgEl = $('settings-msg'), saveEl = $('save');
   var DEFAULT_PORT = '8737';
@@ -252,6 +252,7 @@
     modelEl.value = cfg.model || 'sonnet';
     editEl.checked = !!cfg.edit;
     shellEl.checked = !!cfg.shell;
+    cameraEl.value = cfg.camera === 'back' ? 'back' : 'front';
     syncShell();
     pitchEl.value = cfg.pitch || 1;
     rateEl.value = cfg.rate || 1;
@@ -268,6 +269,7 @@
       model: modelEl.value,
       edit: editEl.checked,
       shell: editEl.checked && shellEl.checked,
+      camera: cameraEl.value,
       pitch: Number(pitchEl.value),
       rate: Number(rateEl.value)
     };
@@ -314,6 +316,36 @@
 
   (function () { var c = readConfig(); setBadge(!!c.edit, !!c.shell); })();
 
+  // ---- Keyboard and camera ------------------------------------------------
+  var typebar = $('typebar'), typed = $('typed');
+  $('kbd-btn').addEventListener('click', function () {
+    typebar.hidden = !typebar.hidden;
+    document.body.classList.toggle('typing', !typebar.hidden);
+    if (!typebar.hidden) typed.focus();
+  });
+  typebar.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var text = typed.value.trim();
+    if (!text && !$('photo').hidden) text = '¿Qué ves en esta foto?';
+    if (!text) return;
+    typed.value = '';
+    typed.blur();
+    typebar.hidden = true;
+    document.body.classList.remove('typing');
+    setStatus('«' + text + '»');
+    if (window.Android && window.Android.sendText) window.Android.sendText(text);
+    else speak('Escribiste: ' + text);
+  });
+  $('cam-btn').addEventListener('click', function () {
+    if (state.mode !== 'idle' || state.talking) return;
+    if (window.Android && window.Android.takePhoto) window.Android.takePhoto();
+    else setStatus('La cámara solo funciona en la tableta.');
+  });
+  $('photo-x').addEventListener('click', function () {
+    Face.clearPhoto();
+    if (window.Android && window.Android.clearPhoto) window.Android.clearPhoto();
+  });
+
   window.Face = {
     setTalking: function (on) {
       state.talking = !!on;
@@ -332,6 +364,14 @@
     },
     setStatus: setStatus,
     openSettings: openSettings,
+    showPhoto: function (src) {
+      $('photo-img').src = src;
+      $('photo').hidden = false;
+    },
+    clearPhoto: function () {
+      $('photo').hidden = true;
+      $('photo-img').removeAttribute('src');
+    },
     configResult: function (ok, message) {
       msgEl.textContent = message;
       msgEl.className = ok ? 'ok' : 'error';

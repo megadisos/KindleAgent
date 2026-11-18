@@ -59,15 +59,46 @@ class BridgeClient {
         request("POST", "/reset", "application/json", "{}".getBytes(StandardCharsets.UTF_8), 8000);
     }
 
-    Answer ask(File audio, String model, boolean edit, boolean shell) throws BridgeException {
+    /** Per-question options sent as headers. */
+    static class Options {
+        String model = "sonnet";
+        boolean edit, shell;
+        String imageId;  // from uploadImage, or null
+    }
+
+    String uploadImage(byte[] jpeg) throws BridgeException {
+        return request("POST", "/image", "image/jpeg", jpeg, 30000).optString("id", null);
+    }
+
+    Answer chat(String text, Options o) throws BridgeException {
+        setOptions(o);
+        String body;
+        try {
+            body = new JSONObject().put("text", text).toString();
+        } catch (Exception e) {
+            throw new BridgeException("Texto inválido");
+        }
+        JSONObject json = request("POST", "/chat", "application/json",
+                body.getBytes(StandardCharsets.UTF_8), 330000);
+        return new Answer(json.optString("heard"), json.optString("reply"));
+    }
+
+    private void setOptions(Options o) {
+        extraHeaders = new String[]{
+                "X-Jarvis-Model", o.model,
+                "X-Jarvis-Edit", o.edit ? "1" : "0",
+                "X-Jarvis-Shell", o.shell ? "1" : "0",
+                "X-Jarvis-Image", o.imageId == null ? "" : o.imageId};
+    }
+
+    Answer ask(File audio, Options o) throws BridgeException {
         byte[] bytes;
         try (InputStream in = new FileInputStream(audio)) {
             bytes = readAll(in);
         } catch (IOException e) {
             throw new BridgeException("No pude leer la grabación");
         }
-        extraHeaders = new String[]{"X-Jarvis-Model", model, "X-Jarvis-Edit", edit ? "1" : "0",
-                "X-Jarvis-Shell", shell ? "1" : "0"};
+        setOptions(o);
         // Edits can take the PC a few minutes; the bridge gives up at 300 s.
         JSONObject json = request("POST", "/ask", "audio/mp4", bytes, 330000);
         return new Answer(json.optString("heard"), json.optString("reply"));

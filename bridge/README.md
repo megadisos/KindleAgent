@@ -63,6 +63,12 @@ Las carpetas quedan guardadas y la ventana las muestra al arrancar.
   - Ojo: los comandos corren con tus permisos de usuario y no quedan limitados a una carpeta. Actívala solo cuando la necesites.
 - Usa git en tus proyectos editables para poder deshacer cualquier cambio.
 
+## Escribir y mostrar fotos
+
+- **⌨ Teclado:** abre una barra arriba para escribirle cuando no te entiende bien por voz.
+- **📷 Cámara:** toma una foto con la cámara de la tableta (frontal o trasera, se elige en el ⚙) y la muestra arriba. Tu siguiente pregunta, por voz o escrita, va con la foto. Si escribes sin texto, pregunta "¿Qué ves en esta foto?". La ✕ la descarta.
+- Las fotos se guardan en `%USERPROFILE%\.jarvis\workspace\fotos`. Solo se guardan las últimas 30.
+
 ## Cambiar de modelo
 
 En el ⚙ de la tableta eliges **Haiku** (el más rápido), **Sonnet** (equilibrado) u **Opus** (el más inteligente, más lento y gasta más de tu límite de Pro). La conversación sigue aunque cambies de modelo.
