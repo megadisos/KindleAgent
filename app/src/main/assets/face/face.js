@@ -216,13 +216,19 @@
   var settingsEl = document.getElementById('settings');
   var hostEl = document.getElementById('host');
   var codeEl = document.getElementById('code');
+  var portEl = document.getElementById('port');
+  var DEFAULT_PORT = '8737';
   var msgEl = document.getElementById('settings-msg');
   var saveEl = document.getElementById('save');
 
   function openSettings() {
     var cfg = {};
     try { cfg = JSON.parse(window.Android ? window.Android.getConfig() : '{}'); } catch (e) {}
-    hostEl.value = cfg.host || '';
+    // Stored as "ip:port"; shown as two fields because the numeric
+    // keyboard on the Fire has no ":" key.
+    var parts = (cfg.host || '').split(':');
+    hostEl.value = parts[0] || '';
+    portEl.value = parts[1] || DEFAULT_PORT;
     codeEl.value = cfg.code || '';
     msgEl.textContent = '';
     msgEl.className = '';
@@ -249,7 +255,9 @@
     msgEl.textContent = 'Probando conexión…';
     msgEl.className = '';
     saveEl.disabled = true;
-    window.Android.saveConfig(hostEl.value, codeEl.value);
+    var host = hostEl.value.replace(/\s/g, '').replace(/,/g, '.');
+    if (host.indexOf(':') < 0) host += ':' + (portEl.value.trim() || DEFAULT_PORT);
+    window.Android.saveConfig(host, codeEl.value);
   });
 
   window.Face = {

@@ -94,6 +94,30 @@ def lan_ip():
         s.close()
 
 
+def decode_audio(path, rate=16000):
+    """Decode any audio file to 16 kHz mono float32 for Whisper.
+
+    faster-whisper's own decoder passes an option that newer PyAV releases
+    removed ("metadata_errors"), so we decode with PyAV ourselves.
+    """
+    import av
+    import numpy as np
+
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=rate)
+    chunks = []
+    with av.open(str(path)) as container:
+        for frame in container.decode(audio=0):
+            out = resampler.resample(frame)
+            for f in out if isinstance(out, list) else [out]:
+                chunks.append(f.to_ndarray().reshape(-1))
+        out = resampler.resample(None)  # flush what is left in the resampler
+        for f in out if isinstance(out, list) else ([out] if out is not None else []):
+            chunks.append(f.to_ndarray().reshape(-1))
+    if not chunks:
+        return np.zeros(0, dtype=np.float32)
+    return np.concatenate(chunks).astype(np.float32) / 32768.0
+
+
 class Transcriber:
     """Local speech-to-text with faster-whisper. The model loads on first use."""
 
@@ -116,8 +140,11 @@ class Transcriber:
 
     def transcribe(self, audio_path):
         model = self.load()
+        audio = decode_audio(audio_path)
+        if audio.size < 1600:  # less than 0.1 s
+            return ""
         segments, _ = model.transcribe(
-            str(audio_path), language="es", vad_filter=True, beam_size=5
+            audio, language="es", vad_filter=True, beam_size=5
         )
         return " ".join(seg.text.strip() for seg in segments).strip()
 
@@ -292,7 +319,7 @@ def main():
     print()
     print("=" * 52)
     print("  Jarvis está escuchando")
-    print(f"  En la tableta escribe:  IP {lan_ip()}:{args.port}   código {cfg['code']}")
+    print(f"  En la tableta escribe:  IP {lan_ip()}   puerto {args.port}   código {cfg['code']}")
     print("  (Ctrl+C para apagar)")
     print("=" * 52)
     print(flush=True)
