@@ -36,6 +36,8 @@ CONFIG_FILE = HOME / "config.json"
 # seconds of silence, the next question starts a fresh one.
 CONVERSATION_TIMEOUT = 15 * 60
 MAX_AUDIO_BYTES = 20 * 1024 * 1024
+# Editing a project can take a while; the tablet waits a bit longer than this.
+CLAUDE_TIMEOUT = 300
 DEFAULT_PORT = 8737
 
 
@@ -149,41 +151,77 @@ class Transcriber:
         return " ".join(seg.text.strip() for seg in segments).strip()
 
 
-class Claude:
-    """Talks to Claude through the Claude Code CLI in print mode."""
+MODELS = ("haiku", "sonnet", "opus")
+READ_TOOLS = "WebSearch,Read,Glob,Grep"
+EDIT_TOOLS = "WebSearch,Read,Glob,Grep,Edit,Write"
 
-    def __init__(self, claude_cmd, model, folders=()):
+
+def _existing_dirs(paths):
+    return [str(Path(p).expanduser()) for p in paths if Path(p).expanduser().is_dir()]
+
+
+class Claude:
+    """Talks to Claude through the Claude Code CLI in print mode.
+
+    Folder access (from ~/.jarvis/config.json):
+      folders       read-only project folders
+      edit_folders  folders Jarvis may also edit, but only in edit mode
+      projects_dir  where Jarvis creates new projects, only in edit mode
+    Edit mode is switched on from the tablet for each question.
+    """
+
+    def __init__(self, claude_cmd, model, folders=(), edit_folders=(), projects_dir=None):
         self.cmd = claude_cmd
         self.model = model
-        # Project folders Jarvis may read (never write): ~/.jarvis/config.json "folders".
-        self.folders = [str(Path(f).expanduser()) for f in folders if Path(f).expanduser().is_dir()]
+        self.folders = _existing_dirs(folders)
+        self.edit_folders = _existing_dirs(edit_folders)
+        self.projects_dir = str(Path(projects_dir).expanduser()) if projects_dir else None
+        if self.projects_dir:
+            Path(self.projects_dir).mkdir(parents=True, exist_ok=True)
         self.session_id = None
         self.last_used = 0.0
         self._lock = threading.Lock()
         WORKSPACE.mkdir(parents=True, exist_ok=True)
         # Claude Code reads CLAUDE.md from its working folder: that is where
-        # Jarvis's personality lives.
-        shutil.copyfile(HERE / "persona.md", WORKSPACE / "CLAUDE.md")
+        # Jarvis's personality and the list of folders live.
+        (WORKSPACE / "CLAUDE.md").write_text(self._instructions(), encoding="utf-8")
+
+    def _instructions(self):
+        text = (HERE / "persona.md").read_text(encoding="utf-8").rstrip() + "\n\n## Carpetas de Jorge\n\n"
+        if self.folders:
+            text += "Solo lectura (nunca se pueden modificar):\n" + "".join(f"- {f}\n" for f in self.folders)
+        if self.edit_folders:
+            text += "Editables en modo edición:\n" + "".join(f"- {f}\n" for f in self.edit_folders)
+        if self.projects_dir:
+            text += f"Proyectos nuevos: crea una subcarpeta con un nombre corto dentro de {self.projects_dir}\n"
+        text += (
+            "\nEl modo edición lo activa Jorge desde la tableta. Si no tienes las herramientas Edit y Write, "
+            "no está activo: díselo en una frase. En modo edición, las carpetas de solo lectura no están disponibles.\n"
+        )
+        return text
 
     def reset(self):
         with self._lock:
             self.session_id = None
 
-    def ask(self, text):
+    def ask(self, text, model=None, edit=False):
+        model = model if model in MODELS else self.model
         with self._lock:
             if time.time() - self.last_used > CONVERSATION_TIMEOUT:
                 self.session_id = None
             args = [
                 self.cmd, "-p",
                 "--output-format", "json",
-                "--model", self.model,
+                "--model", model,
             ]
-            if self.folders:
-                tools = "WebSearch,Read,Glob,Grep"
-                for folder in self.folders:
-                    args += ["--add-dir", folder]
+            if edit:
+                dirs = self.edit_folders + ([self.projects_dir] if self.projects_dir else [])
+                tools = EDIT_TOOLS
             else:
-                tools = "WebSearch"
+                dirs = self.folders + self.edit_folders + ([self.projects_dir] if self.projects_dir else [])
+                tools = READ_TOOLS if dirs else "WebSearch"
+            for folder in dirs:
+                args += ["--add-dir", folder]
             args += ["--tools", tools, "--allowedTools", tools]
             if self.session_id:
                 args += ["--resume", self.session_id]
@@ -193,10 +231,11 @@ class Claude:
             # never bills an API key that happens to be set on this PC.
             env.pop("ANTHROPIC_API_KEY", None)
 
+            log(f"Modelo: {model}{' · MODO EDICIÓN' if edit else ''}")
             started = time.time()
             proc = subprocess.run(
                 args, input=text, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", cwd=WORKSPACE, env=env, timeout=180,
+                encoding="utf-8", errors="replace", cwd=WORKSPACE, env=env, timeout=CLAUDE_TIMEOUT,
             )
             log(f"Claude respondió en {time.time() - started:.1f}s")
             try:
@@ -239,6 +278,12 @@ def make_handler(cfg, transcriber, claude):
             self._json(401, {"error": "Código incorrecto. Revisa el código que muestra el PC."})
             return False
 
+        def _options(self):
+            return {
+                "model": self.headers.get("X-Jarvis-Model", "").strip().lower() or None,
+                "edit": self.headers.get("X-Jarvis-Edit", "") == "1",
+            }
+
         def _body(self):
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_AUDIO_BYTES:
@@ -262,7 +307,7 @@ def make_handler(cfg, transcriber, claude):
                     if not text:
                         return self._json(400, {"error": "Falta el texto"})
                     log(f"Tú (texto): {text}")
-                    reply = claude.ask(text)
+                    reply = claude.ask(text, **self._options())
                     log(f"Jarvis: {reply}")
                     self._json(200, {"heard": text, "reply": reply})
                 elif self.path == "/reset":
@@ -290,7 +335,7 @@ def make_handler(cfg, transcriber, claude):
             log(f"Tú: {heard or '(nada)'}")
             if not heard:
                 return self._json(200, {"heard": "", "reply": "No te escuché bien. ¿Me lo repites?"})
-            reply = claude.ask(heard)
+            reply = claude.ask(heard, **self._options())
             log(f"Jarvis: {reply}")
             self._json(200, {"heard": heard, "reply": reply})
 
@@ -300,14 +345,19 @@ def make_handler(cfg, transcriber, claude):
 def main():
     parser = argparse.ArgumentParser(description="Puente entre la tableta Jarvis y Claude")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--model", default="sonnet", help="Modelo de Claude: sonnet, haiku u opus")
+    parser.add_argument("--model", default="sonnet", choices=MODELS,
+                        help="Modelo por defecto si la tableta no elige uno")
     parser.add_argument("--whisper", default="small", help="Modelo de Whisper: base, small, medium...")
     parser.add_argument("--device", default="cpu", help="cpu o cuda (si tienes tarjeta NVIDIA)")
     parser.add_argument("--claude", default=None, help="Ruta al comando claude si no está en el PATH")
     parser.add_argument("--add-folder", action="append", default=[], metavar="RUTA",
                         help="Deja que Jarvis lea esta carpeta de proyecto (se guarda para la próxima vez)")
+    parser.add_argument("--add-folder-edit", action="append", default=[], metavar="RUTA",
+                        help="Deja que Jarvis edite esta carpeta cuando el modo edición está activo")
     parser.add_argument("--remove-folder", action="append", default=[], metavar="RUTA",
-                        help="Quita una carpeta de la lista")
+                        help="Quita una carpeta de las listas")
+    parser.add_argument("--projects-dir", default=None, metavar="RUTA",
+                        help="Carpeta donde Jarvis crea proyectos nuevos (por defecto ~/JarvisProyectos)")
     args = parser.parse_args()
 
     claude_cmd = args.claude or find_claude()
@@ -315,20 +365,39 @@ def main():
         sys.exit("No encontré Claude Code. Instálalo y ejecuta 'claude' una vez para iniciar sesión.")
 
     cfg = load_config()
-    folders = cfg.get("folders", [])
-    for f in args.add_folder:
+    original = json.dumps(cfg, sort_keys=True)
+    folders = cfg.setdefault("folders", [])
+    edit_folders = cfg.setdefault("edit_folders", [])
+
+    def resolve(f):
         path = str(Path(f).expanduser().resolve())
         if not Path(path).is_dir():
             sys.exit(f"No existe la carpeta: {path}")
+        return path
+
+    for f in args.add_folder:
+        path = resolve(f)
+        if path in edit_folders:
+            edit_folders.remove(path)
         if path not in folders:
             folders.append(path)
+    for f in args.add_folder_edit:
+        path = resolve(f)
+        if path in folders:
+            folders.remove(path)
+        if path not in edit_folders:
+            edit_folders.append(path)
     removed = {str(Path(f).expanduser().resolve()) for f in args.remove_folder}
-    folders = [f for f in folders if f not in removed]
-    if folders != cfg.get("folders", []):
-        cfg["folders"] = folders
+    cfg["folders"] = [f for f in folders if f not in removed]
+    cfg["edit_folders"] = [f for f in edit_folders if f not in removed]
+    if args.projects_dir:
+        cfg["projects_dir"] = str(Path(args.projects_dir).expanduser().resolve())
+    cfg.setdefault("projects_dir", str(Path.home() / "JarvisProyectos"))
+    if json.dumps(cfg, sort_keys=True) != original:
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+
     transcriber = Transcriber(args.whisper, args.device)
-    claude = Claude(claude_cmd, args.model, folders)
+    claude = Claude(claude_cmd, args.model, cfg["folders"], cfg["edit_folders"], cfg["projects_dir"])
     try:
         server = BridgeServer(("0.0.0.0", args.port), make_handler(cfg, transcriber, claude))
     except OSError:
@@ -344,9 +413,14 @@ def main():
     print("  Jarvis está escuchando")
     print(f"  En la tableta escribe:  IP {lan_ip()}   puerto {args.port}   código {cfg['code']}")
     if claude.folders:
-        print("  Puede leer (sin modificar):")
+        print("  Solo lectura:")
         for f in claude.folders:
             print(f"    - {f}")
+    if claude.edit_folders:
+        print("  Editables en modo edición:")
+        for f in claude.edit_folders:
+            print(f"    - {f}")
+    print(f"  Proyectos nuevos en: {claude.projects_dir}")
     print("  (Ctrl+C para apagar)")
     print("=" * 52)
     print(flush=True)

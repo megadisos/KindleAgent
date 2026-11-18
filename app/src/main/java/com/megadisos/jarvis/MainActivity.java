@@ -28,7 +28,8 @@ import java.util.concurrent.Executors;
  * the bridge on the PC and speaks the answer with Android's TextToSpeech.
  *
  * JS -> Android: window.Android.listen(), stopListening(), stop(), speak(text),
- *                getConfig(), saveConfig(host, code)
+ *                getConfig(), saveConfig(host, code), savePrefs(json),
+ *                previewVoice(text, pitch, rate)
  * Android -> JS: Face.setMode(mode), Face.setLevel(x), Face.setTalking(bool),
  *                Face.pulse(), Face.setStatus(text), Face.configResult(ok, msg)
  */
@@ -80,6 +81,7 @@ public class MainActivity extends Activity {
                     callJs("Face.pulse()");
                 }
             });
+            applyVoice(prefs.getFloat("pitch", 1f), prefs.getFloat("rate", 1f));
             ttsReady = true;
         });
     }
@@ -128,7 +130,8 @@ public class MainActivity extends Activity {
         setStatus("Pensando…");
         network.execute(() -> {
             try {
-                BridgeClient.Answer answer = client.ask(audio);
+                BridgeClient.Answer answer = client.ask(audio,
+                        prefs.getString("model", "sonnet"), prefs.getBoolean("edit", false));
                 callJs("Face.setMode('idle')");
                 setStatus(answer.heard.isEmpty() ? "" : "«" + answer.heard + "»");
                 speak(answer.reply);
@@ -138,6 +141,12 @@ public class MainActivity extends Activity {
                 speak("Tengo un problema para conectarme con el computador.");
             }
         });
+    }
+
+    private void applyVoice(float pitch, float rate) {
+        if (tts == null) return;
+        tts.setPitch(pitch);
+        tts.setSpeechRate(rate);
     }
 
     private void speak(String text) {
@@ -233,10 +242,40 @@ public class MainActivity extends Activity {
                 return new JSONObject()
                         .put("host", prefs.getString("host", ""))
                         .put("code", prefs.getString("code", ""))
+                        .put("model", prefs.getString("model", "sonnet"))
+                        .put("edit", prefs.getBoolean("edit", false))
+                        .put("pitch", (double) prefs.getFloat("pitch", 1f))
+                        .put("rate", (double) prefs.getFloat("rate", 1f))
                         .toString();
             } catch (Exception e) {
                 return "{}";
             }
+        }
+
+        @JavascriptInterface
+        public void savePrefs(String json) {
+            try {
+                JSONObject p = new JSONObject(json);
+                String model = p.optString("model", "sonnet");
+                float pitch = (float) p.optDouble("pitch", 1.0);
+                float rate = (float) p.optDouble("rate", 1.0);
+                prefs.edit()
+                        .putString("model", model)
+                        .putBoolean("edit", p.optBoolean("edit", false))
+                        .putFloat("pitch", pitch)
+                        .putFloat("rate", rate)
+                        .apply();
+                applyVoice(pitch, rate);
+            } catch (Exception ignored) {
+                // keep the previous preferences
+            }
+        }
+
+        @JavascriptInterface
+        public void previewVoice(String text, double pitch, double rate) {
+            if (!ttsReady) return;
+            applyVoice((float) pitch, (float) rate);
+            MainActivity.this.speak(text);
         }
 
         @JavascriptInterface

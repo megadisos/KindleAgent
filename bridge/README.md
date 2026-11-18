@@ -40,19 +40,29 @@ Deja la ventana abierta mientras uses a Jarvis. En la ventana verás lo que ente
 Puedes pasar opciones al `.bat` desde una terminal, por ejemplo `iniciar_jarvis.bat --model haiku`:
 
 - `--port 8738`: usa otro puerto si la ventana dice que el 8737 está ocupado. En la tableta cambia el puerto al mismo número.
-- `--model haiku`: respuestas más rápidas y gasta menos de tu límite de Pro. Por defecto usa `sonnet`.
+- `--model haiku`: modelo por defecto si la tableta no elige uno. Normalmente lo eliges en la tableta.
 - `--whisper base`: reconocimiento de voz más rápido pero menos preciso. `medium` es más preciso pero más lento. Por defecto `small`.
 - `--device cuda`: usa tu tarjeta NVIDIA para Whisper, si tienes una.
 
-## Darle acceso a tus proyectos (solo lectura)
+## Darle acceso a tus proyectos
 
-Por defecto Jarvis está encerrado en su propia carpeta. Para que pueda leer un proyecto y contestarte preguntas sobre él, abre una terminal en la carpeta de Jarvis y ejecuta, una sola vez:
+Por defecto Jarvis está encerrado en su propia carpeta. Abre una terminal en la carpeta de Jarvis y ejecuta, una sola vez por carpeta:
 
 ```
-.\iniciar_jarvis.bat --add-folder "E:\ruta\a\tu\proyecto"
+.\iniciar_jarvis.bat --add-folder "E:\ruta\proyecto"        (solo lectura)
+.\iniciar_jarvis.bat --add-folder-edit "E:\ruta\proyecto"   (puede editarlo en modo edición)
+.\iniciar_jarvis.bat --remove-folder "E:\ruta\proyecto"     (quitarla)
 ```
 
-La carpeta queda guardada y la ventana la muestra al arrancar. Puedes agregar varias. Para quitar una: `--remove-folder "E:\ruta"`. Jarvis puede leer y buscar en esas carpetas, pero no modificar archivos ni ejecutar comandos.
+Las carpetas quedan guardadas y la ventana las muestra al arrancar.
+
+- **Normal:** Jarvis puede leer y buscar en todas tus carpetas, pero no cambia nada.
+- **Modo edición** (se activa en el ⚙ de la tableta, y arriba a la izquierda aparece "✎ Modo edición"): puede crear y modificar archivos en las carpetas editables y crear **proyectos nuevos** en `%USERPROFILE%\JarvisProyectos`. Puedes cambiar esa carpeta con `--projects-dir "E:\ruta"`. Antes de cambiar algo te dice qué va a hacer y espera tu "sí". En este modo no ve las carpetas de solo lectura.
+- Nunca puede ejecutar comandos, instalar paquetes ni usar git. Te recomiendo usar git en tus proyectos editables para poder deshacer cualquier cambio.
+
+## Cambiar de modelo
+
+En el ⚙ de la tableta eliges **Haiku** (el más rápido), **Sonnet** (equilibrado) u **Opus** (el más inteligente, más lento y gasta más de tu límite de Pro). La conversación sigue aunque cambies de modelo.
 
 ## Bueno saber
 

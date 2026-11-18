@@ -213,42 +213,80 @@
   canvas.addEventListener('click', function () { if (!longPressed) onTap(); });
 
   // ---- Settings -----------------------------------------------------------
-  var settingsEl = document.getElementById('settings');
-  var hostEl = document.getElementById('host');
-  var codeEl = document.getElementById('code');
-  var portEl = document.getElementById('port');
+  var $ = function (id) { return document.getElementById(id); };
+  var settingsEl = $('settings');
+  var hostEl = $('host'), portEl = $('port'), codeEl = $('code');
+  var modelEl = $('model'), editEl = $('edit');
+  var pitchEl = $('pitch'), rateEl = $('rate');
+  var msgEl = $('settings-msg'), saveEl = $('save');
   var DEFAULT_PORT = '8737';
-  var msgEl = document.getElementById('settings-msg');
-  var saveEl = document.getElementById('save');
+
+  function readConfig() {
+    try { return JSON.parse(window.Android ? window.Android.getConfig() : '{}'); } catch (e) { return {}; }
+  }
+  function showVoiceValues() {
+    $('pitch-val').textContent = '(' + Number(pitchEl.value).toFixed(2) + ')';
+    $('rate-val').textContent = '(' + Number(rateEl.value).toFixed(2) + ')';
+  }
+  function setBadge(on) { $('badge').hidden = !on; }
 
   function openSettings() {
-    var cfg = {};
-    try { cfg = JSON.parse(window.Android ? window.Android.getConfig() : '{}'); } catch (e) {}
+    var cfg = readConfig();
     // Stored as "ip:port"; shown as two fields because the numeric
     // keyboard on the Fire has no ":" key.
     var parts = (cfg.host || '').split(':');
     hostEl.value = parts[0] || '';
     portEl.value = parts[1] || DEFAULT_PORT;
     codeEl.value = cfg.code || '';
+    modelEl.value = cfg.model || 'sonnet';
+    editEl.checked = !!cfg.edit;
+    pitchEl.value = cfg.pitch || 1;
+    rateEl.value = cfg.rate || 1;
+    showVoiceValues();
     msgEl.textContent = '';
     msgEl.className = '';
     saveEl.disabled = false;
     settingsEl.hidden = false;
-    hostEl.focus();
   }
   function closeSettings() { settingsEl.hidden = true; }
 
-  document.getElementById('gear').addEventListener('click', openSettings);
-  document.getElementById('cancel').addEventListener('click', closeSettings);
-  document.getElementById('settings-form').addEventListener('submit', function (e) {
+  function prefs() {
+    return {
+      model: modelEl.value,
+      edit: editEl.checked,
+      pitch: Number(pitchEl.value),
+      rate: Number(rateEl.value)
+    };
+  }
+
+  pitchEl.addEventListener('input', showVoiceValues);
+  rateEl.addEventListener('input', showVoiceValues);
+  $('preview').addEventListener('click', function () {
+    var p = prefs();
+    var sample = 'Hola Jorge. Así sonaría mi voz.';
+    if (window.Android && window.Android.previewVoice) {
+      window.Android.previewVoice(sample, p.pitch, p.rate);
+    } else if ('speechSynthesis' in window) {
+      var u = new SpeechSynthesisUtterance(sample);
+      u.lang = 'es-ES'; u.pitch = p.pitch; u.rate = p.rate;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    }
+  });
+
+  $('gear').addEventListener('click', openSettings);
+  $('cancel').addEventListener('click', closeSettings);
+  $('settings-form').addEventListener('submit', function (e) {
     e.preventDefault();
-    if (!hostEl.value.trim() || !codeEl.value.trim()) {
-      msgEl.textContent = 'Escribe la IP y el código.';
+    if (!window.Android) {
+      msgEl.textContent = 'Esto solo funciona en la tableta.';
       msgEl.className = 'error';
       return;
     }
-    if (!window.Android) {
-      msgEl.textContent = 'Esto solo funciona en la tableta.';
+    var p = prefs();
+    window.Android.savePrefs(JSON.stringify(p));
+    setBadge(p.edit);
+    if (!hostEl.value.trim() || !codeEl.value.trim()) {
+      msgEl.textContent = 'Guardado. Falta la IP y el código para conectar con el PC.';
       msgEl.className = 'error';
       return;
     }
@@ -259,6 +297,8 @@
     if (host.indexOf(':') < 0) host += ':' + (portEl.value.trim() || DEFAULT_PORT);
     window.Android.saveConfig(host, codeEl.value);
   });
+
+  setBadge(!!readConfig().edit);
 
   window.Face = {
     setTalking: function (on) {

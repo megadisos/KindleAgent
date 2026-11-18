@@ -29,6 +29,7 @@ class BridgeClient {
 
     private final String baseUrl;
     private final String code;
+    private String[] extraHeaders = new String[0];
 
     BridgeClient(String host, String code) {
         String h = host.trim();
@@ -58,14 +59,16 @@ class BridgeClient {
         request("POST", "/reset", "application/json", "{}".getBytes(StandardCharsets.UTF_8), 8000);
     }
 
-    Answer ask(File audio) throws BridgeException {
+    Answer ask(File audio, String model, boolean edit) throws BridgeException {
         byte[] bytes;
         try (InputStream in = new FileInputStream(audio)) {
             bytes = readAll(in);
         } catch (IOException e) {
             throw new BridgeException("No pude leer la grabación");
         }
-        JSONObject json = request("POST", "/ask", "audio/mp4", bytes, 200000);
+        extraHeaders = new String[]{"X-Jarvis-Model", model, "X-Jarvis-Edit", edit ? "1" : "0"};
+        // Edits can take the PC a few minutes; the bridge gives up at 300 s.
+        JSONObject json = request("POST", "/ask", "audio/mp4", bytes, 330000);
         return new Answer(json.optString("heard"), json.optString("reply"));
     }
 
@@ -78,6 +81,9 @@ class BridgeClient {
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(readTimeout);
             conn.setRequestProperty("X-Jarvis-Code", code);
+            for (int i = 0; i + 1 < extraHeaders.length; i += 2) {
+                conn.setRequestProperty(extraHeaders[i], extraHeaders[i + 1]);
+            }
             if (body != null) {
                 conn.setDoOutput(true);
                 conn.setRequestProperty("Content-Type", type);
