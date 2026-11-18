@@ -25,6 +25,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -71,6 +72,13 @@ def load_config():
         cfg["code"] = f"{secrets.randbelow(10**6):06d}"
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return cfg
+
+
+def device_status(raw):
+    """Tablet battery/model/etc. summary sent URL-encoded by the app."""
+    text = urllib.parse.unquote_plus(raw or "")
+    text = " ".join(text.split())[:1200]  # one line, bounded
+    return text.replace("[", "(").replace("]", ")") or None
 
 
 def image_path(image_id):
@@ -226,8 +234,13 @@ class Claude:
         with self._lock:
             self.session_id = None
 
-    def ask(self, text, model=None, edit=False, shell=False, image=None):
+    def ask(self, text, model=None, edit=False, shell=False, image=None, device=None):
         model = model if model in MODELS else self.model
+        if device:
+            text = (
+                f"{text}\n\n[Estado actual de la tableta, leído ahora mismo por la app "
+                f"(úsalo solo si la pregunta lo necesita): {device}]"
+            )
         if image:
             text = (
                 f"{text}\n\n[Jorge te muestra una foto tomada ahora con la cámara de la tableta: {image} . "
@@ -314,6 +327,7 @@ def make_handler(cfg, transcriber, claude):
                 "edit": self.headers.get("X-Jarvis-Edit", "") == "1",
                 "shell": self.headers.get("X-Jarvis-Shell", "") == "1",
                 "image": image_path(self.headers.get("X-Jarvis-Image", "")),
+                "device": device_status(self.headers.get("X-Jarvis-Device", "")),
             }
 
         def _body(self):

@@ -64,6 +64,7 @@ class BridgeClient {
         String model = "sonnet";
         boolean edit, shell;
         String imageId;  // from uploadImage, or null
+        String device;   // DeviceInfo.summary(), or null
     }
 
     String uploadImage(byte[] jpeg) throws BridgeException {
@@ -88,7 +89,18 @@ class BridgeClient {
                 "X-Jarvis-Model", o.model,
                 "X-Jarvis-Edit", o.edit ? "1" : "0",
                 "X-Jarvis-Shell", o.shell ? "1" : "0",
-                "X-Jarvis-Image", o.imageId == null ? "" : o.imageId};
+                "X-Jarvis-Image", o.imageId == null ? "" : o.imageId,
+                "X-Jarvis-Device", encode(o.device)};
+    }
+
+    /** Headers must be plain ASCII, so the Spanish text goes URL-encoded. */
+    private static String encode(String s) {
+        if (s == null) return "";
+        try {
+            return java.net.URLEncoder.encode(s, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            return "";
+        }
     }
 
     Answer ask(File audio, Options o) throws BridgeException {
