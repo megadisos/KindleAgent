@@ -63,10 +63,10 @@ Las carpetas quedan guardadas y la ventana las muestra al arrancar.
   - Ojo: los comandos corren con tus permisos de usuario y no quedan limitados a una carpeta. Actívala solo cuando la necesites.
 - Usa git en tus proyectos editables para poder deshacer cualquier cambio.
 
-## Escribir y mostrar fotos
+## Escribir y cámara en vivo
 
 - **⌨ Teclado:** abre una barra arriba para escribirle cuando no te entiende bien por voz.
-- **📷 Cámara:** toma una foto con la cámara de la tableta (frontal o trasera, se elige en el ⚙) y la muestra arriba. Tu siguiente pregunta, por voz o escrita, va con la foto. Si escribes sin texto, pregunta "¿Qué ves en esta foto?". La ✕ la descarta.
+- **📷 Cámara en vivo:** prende la cámara de la tableta (frontal o trasera, se elige en el ⚙) y muestra lo que ve en una ventanita arriba a la izquierda. Mientras esté prendida, cada vez que le hables o escribas, Jarvis toma el cuadro de ese momento y lo mira junto con tu pregunta. Si escribes sin texto, pregunta "¿Qué ves?". Otro toque al 📷 la apaga (también se apaga sola si sales de la app). No es video continuo: Claude mira una imagen por pregunta.
 - Las fotos se guardan en `%USERPROFILE%\.jarvis\workspace\fotos`. Solo se guardan las últimas 30.
 
 ## Cambiar de modelo

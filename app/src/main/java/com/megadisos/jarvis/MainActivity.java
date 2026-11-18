@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
  *
  * JS -> Android: window.Android.listen(), stopListening(), stop(), speak(text),
  *                getConfig(), saveConfig(host, code), savePrefs(json),
- *                previewVoice(text, pitch, rate), sendText(text), takePhoto(), clearPhoto()
+ *                previewVoice(text, pitch, rate), sendText(text), toggleCamera(), setTyping(on)
  * Android -> JS: Face.setMode(mode), Face.setLevel(x), Face.setTalking(bool),
  *                Face.pulse(), Face.setStatus(text), Face.configResult(ok, msg)
  */
@@ -46,8 +46,7 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private boolean listenAfterPermission = false;
-    private final PhotoTaker photoTaker = new PhotoTaker();
-    private volatile String pendingImageId;  // photo waiting for the next question
+    private LiveCamera liveCamera;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -64,7 +63,14 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         webView.addJavascriptInterface(new Bridge(), "Android");
-        setContentView(webView);
+        // The face fills the screen; the live camera preview floats on top.
+        android.widget.FrameLayout root = new android.widget.FrameLayout(this);
+        root.setBackgroundColor(0xFF000000);
+        root.addView(webView);
+        android.view.TextureView preview = new android.view.TextureView(this);
+        root.addView(preview);
+        liveCamera = new LiveCamera(this, preview);
+        setContentView(root);
         webView.loadUrl("file:///android_asset/face/index.html");
 
         tts = new TextToSpeech(this, status -> {
@@ -141,7 +147,6 @@ public class MainActivity extends Activity {
         o.model = prefs.getString("model", "sonnet");
         o.edit = prefs.getBoolean("edit", false);
         o.shell = o.edit && prefs.getBoolean("shell", false);
-        o.imageId = pendingImageId;
         return o;
     }
 
@@ -154,22 +159,33 @@ public class MainActivity extends Activity {
         setStatus("Pensando…");
         BridgeClient.Options o = options();
         BridgeClient c = client();
-        network.execute(() -> {
-            try {
-                BridgeClient.Answer answer = question.send(c, o);
-                if (o.imageId != null && o.imageId.equals(pendingImageId)) {
-                    pendingImageId = null;
-                    callJs("Face.clearPhoto()");
+        if (liveCamera.isOn()) {
+            // Look first: grab what the camera sees right now and send it along.
+            liveCamera.grab(jpeg -> network.execute(() -> send(c, o, question, jpeg)));
+        } else {
+            network.execute(() -> send(c, o, question, null));
+        }
+    }
+
+    /** Runs on the network thread. */
+    private void send(BridgeClient c, BridgeClient.Options o, Question question, byte[] jpeg) {
+        try {
+            if (jpeg != null) {
+                try {
+                    o.imageId = c.uploadImage(jpeg);
+                } catch (BridgeClient.BridgeException e) {
+                    o.imageId = null;  // answer anyway, just without the picture
                 }
-                callJs("Face.setMode('idle')");
-                setStatus(answer.heard.isEmpty() ? "" : "«" + answer.heard + "»");
-                speak(answer.reply);
-            } catch (BridgeClient.BridgeException e) {
-                callJs("Face.setMode('idle')");
-                setStatus(e.getMessage());
-                speak("Tengo un problema para conectarme con el computador.");
             }
-        });
+            BridgeClient.Answer answer = question.send(c, o);
+            callJs("Face.setMode('idle')");
+            setStatus(answer.heard.isEmpty() ? "" : "«" + answer.heard + "»");
+            speak(answer.reply);
+        } catch (BridgeClient.BridgeException e) {
+            callJs("Face.setMode('idle')");
+            setStatus(e.getMessage());
+            speak("Tengo un problema para conectarme con el computador.");
+        }
     }
 
     private boolean configured() {
@@ -187,39 +203,25 @@ public class MainActivity extends Activity {
         runQuestion((c, o) -> c.chat(t, o));
     }
 
-    private void takePhoto() {
+    private void toggleCamera() {
+        if (liveCamera.isOn()) {
+            liveCamera.stop();
+            callJs("Face.setCameraOn(false)");
+            setStatus("Cámara apagada");
+            return;
+        }
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAM);
             return;
         }
-        if (!configured()) return;
-        setStatus("Mirando…");
-        callJs("Face.setMode('thinking')");
-        boolean front = !"back".equals(prefs.getString("camera", "front"));
-        photoTaker.take(front, new PhotoTaker.Callback() {
-            @Override public void onPhoto(byte[] jpeg) {
-                String thumb = android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP);
-                callJs("Face.showPhoto('data:image/jpeg;base64," + thumb + "')");
-                BridgeClient c = client();
-                network.execute(() -> {
-                    try {
-                        pendingImageId = c.uploadImage(jpeg);
-                        callJs("Face.setMode('idle')");
-                        setStatus("Listo. Pregúntame sobre la foto: toca la cara o escribe.");
-                    } catch (BridgeClient.BridgeException e) {
-                        callJs("Face.setMode('idle')");
-                        callJs("Face.clearPhoto()");
-                        setStatus(e.getMessage());
-                    }
-                });
-            }
-
-            @Override public void onError(String message) {
-                callJs("Face.setMode('idle')");
-                setStatus(message);
-            }
-        });
+        String error = liveCamera.start(!"back".equals(prefs.getString("camera", "front")));
+        if (error != null) {
+            setStatus(error);
+            return;
+        }
+        callJs("Face.setCameraOn(true)");
+        setStatus("Cámara encendida: veré lo que tenga enfrente cuando me hables o escribas");
     }
 
     private void applyVoice(float pitch, float rate) {
@@ -243,7 +245,7 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode == REQ_CAM) {
-            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) takePhoto();
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) toggleCamera();
             else setStatus("Necesito permiso para usar la cámara");
             return;
         }
@@ -276,8 +278,19 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onConfigurationChanged(android.content.res.Configuration config) {
+        super.onConfigurationChanged(config);
+        // Let the new screen size settle before measuring it.
+        webView.post(liveCamera::onRotated);
+    }
+
+    @Override
     protected void onPause() {
         listener.cancel();
+        if (liveCamera.isOn()) {
+            liveCamera.stop();
+            callJs("Face.setCameraOn(false)");
+        }
         callJs("Face.setMode('idle')");
         super.onPause();
     }
@@ -310,13 +323,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void takePhoto() {
-            runOnUiThread(MainActivity.this::takePhoto);
+        public void toggleCamera() {
+            runOnUiThread(MainActivity.this::toggleCamera);
         }
 
         @JavascriptInterface
-        public void clearPhoto() {
-            pendingImageId = null;
+        public void setTyping(boolean on) {
+            runOnUiThread(() -> liveCamera.setTyping(on));
         }
 
         @JavascriptInterface

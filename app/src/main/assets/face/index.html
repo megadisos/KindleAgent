@@ -12,14 +12,9 @@
   <button id="gear" aria-label="Configuración">⚙</button>
   <div id="badge" hidden>✎ Modo edición</div>
 
-  <div id="photo" hidden>
-    <img id="photo-img" alt="Foto para Jarvis">
-    <button id="photo-x" aria-label="Quitar foto">✕</button>
-  </div>
-
   <div id="dock">
     <button id="kbd-btn" aria-label="Escribir">⌨</button>
-    <button id="cam-btn" aria-label="Tomar foto">📷</button>
+    <button id="cam-btn" aria-label="Prender o apagar la cámara">📷</button>
   </div>
 
   <form id="typebar" hidden>
@@ -62,7 +57,7 @@
         <span><b>Terminal</b>: además puede ejecutar comandos en el PC (instalar paquetes, git, etc.). Te dice cada comando y espera tu "sí". Solo con modo edición.</span>
       </label>
 
-      <label>Cámara
+      <label>Cámara (frontal o trasera)
         <select id="camera">
           <option value="front">Frontal (la que te mira)</option>
           <option value="back">Trasera</option>
