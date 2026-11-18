@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private boolean listenAfterPermission = false;
     private LiveCamera liveCamera;
+    private DeviceInfo deviceInfo;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -54,6 +55,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        deviceInfo = new DeviceInfo(this);
         if (!prefs.getBoolean("camera_back_default", false)) {
             // From 0.6.1 the back camera is the default, also for earlier installs.
             prefs.edit().putString("camera", "back").putBoolean("camera_back_default", true).apply();
@@ -151,6 +153,7 @@ public class MainActivity extends Activity {
         o.model = prefs.getString("model", "sonnet");
         o.edit = prefs.getBoolean("edit", false);
         o.shell = o.edit && prefs.getBoolean("shell", false);
+        o.device = deviceInfo.summary();
         return o;
     }
 
@@ -309,7 +312,14 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        deviceInfo.resume();
+    }
+
+    @Override
     protected void onPause() {
+        deviceInfo.pause();
         listener.cancel();
         if (liveCamera.isOn()) {
             liveCamera.stop();

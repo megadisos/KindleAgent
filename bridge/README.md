@@ -69,6 +69,10 @@ Las carpetas quedan guardadas y la ventana las muestra al arrancar.
 - **📷 Cámara en vivo:** prende la cámara de la tableta (trasera por defecto; también se elige en el ⚙) y muestra lo que ve en una ventanita arriba a la izquierda. Mientras esté prendida, cada vez que le hables o escribas, Jarvis toma el cuadro de ese momento y lo mira junto con tu pregunta. Si escribes sin texto, pregunta "¿Qué ves?". El botón 🔄 que aparece al lado cambia entre la cámara frontal y la trasera al instante. Otro toque al 📷 la apaga (también se apaga sola si sales de la app). No es video continuo: Claude mira una imagen por pregunta.
 - Las fotos se guardan en `%USERPROFILE%\.jarvis\workspace\fotos`. Solo se guardan las últimas 30.
 
+## Estado de la tableta
+
+Con cada pregunta, la app manda un resumen del estado de la tableta: batería (y si está cargando), temperatura, modelo, almacenamiento, memoria RAM, señal de wifi, pantalla y brillo, volumen, luz ambiente, si está de pie o acostada y qué sensores tiene. Así puedes preguntarle "¿cuánta batería tienes?" o "¿cuánto espacio te queda?". Solo se usa para responder; no se guarda.
+
 ## Cambiar de modelo
 
 En el ⚙ de la tableta eliges **Haiku** (el más rápido), **Sonnet** (equilibrado) u **Opus** (el más inteligente, más lento y gasta más de tu límite de Pro). La conversación sigue aunque cambies de modelo.
