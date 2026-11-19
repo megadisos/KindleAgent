@@ -313,6 +313,7 @@ class Transcriber:
         self.model_name = model_name
         self.device = device
         self._model = None
+        self.error = None
         self._lock = threading.Lock()
         words = [w for w in extra_words if w]
         self.prompt = "Conversación en español con Megadisos. " + VOCABULARY
@@ -325,18 +326,27 @@ class Transcriber:
         compute = "int8" if self.device == "cpu" else "float16"
         return WhisperModel(name, device=self.device, compute_type=compute)
 
+    def ready(self):
+        return self._model is not None
+
     def load(self):
         with self._lock:
             if self._model is None:
-                log(f"Cargando Whisper '{self.model_name}' (la primera vez se descarga)...")
+                log(f"Cargando Whisper '{self.model_name}'. La primera vez se descarga "
+                    "(large-v3-turbo pesa unos 1.6 GB, puede tardar varios minutos).")
                 try:
                     self._model = self._open(self.model_name)
                 except Exception as e:  # unknown name, no memory, download failed...
                     if self.model_name == FALLBACK_WHISPER:
+                        self.error = str(e)
                         raise
                     log(f"No pude cargar '{self.model_name}' ({e}). Uso '{FALLBACK_WHISPER}'.")
                     self.model_name = FALLBACK_WHISPER
-                    self._model = self._open(self.model_name)
+                    try:
+                        self._model = self._open(self.model_name)
+                    except Exception as e2:
+                        self.error = str(e2)
+                        raise
                 log("Whisper listo.")
         return self._model
 
@@ -601,6 +611,12 @@ def make_handler(cfg, transcriber, claude, tunnel=None):
             audio = self._body()
             if not audio:
                 return self._json(400, {"error": "No llegó audio"})
+            if not transcriber.ready() and transcriber.error:
+                return self._json(500, {"error": "No pude cargar Whisper: " + transcriber.error})
+            if not transcriber.ready():
+                log("La tableta habló, pero Whisper aún se está descargando o cargando.")
+                return self._json(200, {"heard": "", "reply": "Todavía estoy descargando mi nuevo oído en el PC. "
+                                        "Mira la ventana negra y háblame cuando diga Whisper listo."})
             fd, path = tempfile.mkstemp(suffix=".m4a")
             try:
                 with os.fdopen(fd, "wb") as f:
@@ -621,6 +637,8 @@ def make_handler(cfg, transcriber, claude, tunnel=None):
 
 
 def main():
+    # Hugging Face warns about a missing HF_TOKEN; it is not needed, so keep the window clean.
+    os.environ.setdefault("HF_HUB_VERBOSITY", "error")
     parser = argparse.ArgumentParser(description="Puente entre la tableta Megadisos y Claude")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--model", default="sonnet", choices=MODELS,
