@@ -75,6 +75,18 @@ Con cada pregunta, la app manda un resumen del estado de la tableta: batería (y
 
 La ubicación pide permiso la primera vez que abres la app. Si dijiste que no, o Jarvis dice que la ubicación está apagada, actívala en la tableta en **Configuración → Ubicación** (y en **Apps → Jarvis → Permisos**). La Fire no tiene GPS: la ubica por el wifi, así que es aproximada.
 
+## Usar Jarvis fuera de casa
+
+`iniciar_jarvis.bat` instala **cloudflared** la primera vez (gratis, sin cuenta) y abre un túnel de Cloudflare. La ventana muestra un link como `https://algo-raro.trycloudflare.com`.
+
+No tienes que escribir ese link en la tableta. Cada vez que abres la app estando en el wifi de casa, la tableta le pide al PC el link y una clave larga y los guarda. Fuera de casa, si no encuentra el PC en el wifi, usa el link.
+
+- El link cambia cada vez que reinicias Jarvis en el PC. Después de reiniciarlo, abre la app una vez en el wifi de casa para que aprenda el nuevo.
+- Desde fuera solo sirve la clave larga, que nadie escribe, nunca el código de 6 dígitos. Tras 10 claves incorrectas desde fuera, se bloquea 15 minutos.
+- Por internet, Cloudflare corta las respuestas que tardan más de 100 segundos. Si Jarvis está editando algo largo, sigue trabajando en el PC y luego te cuenta.
+- El PC tiene que seguir encendido con Jarvis abierto.
+- Para no abrir el túnel: `iniciar_jarvis.bat --sin-tunel`.
+
 ## Audífonos Bluetooth
 
 Si conectas audífonos Bluetooth con micrófono (por ejemplo Galaxy Buds) a la tableta, Jarvis te escucha por el micrófono de los audífonos y te responde por ellos. Al empezar a escuchar tarda un segundo en abrir el micrófono (dice "Conectando el micrófono de los audífonos…").

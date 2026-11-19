@@ -15,7 +15,10 @@ Endpoints (all but /health need the X-Jarvis-Code header):
 """
 
 import argparse
+import atexit
+import hmac
 import json
+import re
 import os
 import secrets
 import shutil
@@ -72,9 +75,17 @@ def load_config():
         cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     else:
         cfg = {}
+    changed = False
     if not cfg.get("code"):
         cfg["code"] = f"{secrets.randbelow(10**6):06d}"
-        CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        changed = True
+    if not cfg.get("remote_token"):
+        # Long key required for connections from outside (through Cloudflare).
+        # The tablet gets it automatically on the home wifi; nobody types it.
+        cfg["remote_token"] = secrets.token_urlsafe(32)
+        changed = True
+    if changed:
+        CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     return cfg
 
 
@@ -127,6 +138,108 @@ def find_claude():
         if candidate.is_file():
             return str(candidate)
     return None
+
+
+def find_cloudflared():
+    found = shutil.which("cloudflared")
+    if found:
+        return found
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links" / "cloudflared.exe",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "cloudflared" / "cloudflared.exe",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "cloudflared" / "cloudflared.exe",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+
+class Tunnel:
+    """A free Cloudflare quick tunnel (https://....trycloudflare.com) to this bridge.
+
+    The link changes every time the bridge starts. The tablet learns it on the
+    home wifi and uses it when it cannot reach the PC directly.
+    """
+
+    URL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+
+    def __init__(self, port):
+        self.port = port
+        self.url = None
+        self.proc = None
+        self.ready = threading.Event()
+
+    def start(self):
+        exe = find_cloudflared()
+        if not exe:
+            log("No encontré cloudflared: Jarvis solo funcionará en el wifi de casa.")
+            log("Instálalo con:  winget install --id Cloudflare.cloudflared  y vuelve a abrir Jarvis.")
+            return False
+        self.proc = subprocess.Popen(
+            [exe, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{self.port}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+        )
+        atexit.register(self.stop)
+        threading.Thread(target=self._read, daemon=True).start()
+        return True
+
+    def _read(self):
+        for line in self.proc.stderr:
+            if self.url is None:
+                m = self.URL_RE.search(line)
+                if m:
+                    self.url = m.group(0)
+                    self.ready.set()
+                    print()
+                    print("=" * 52)
+                    print("  Jarvis también está disponible fuera de casa:")
+                    print(f"  {self.url}")
+                    print("  La tableta lo aprende sola la próxima vez que")
+                    print("  se conecte en el wifi de casa (abre la app).")
+                    print("=" * 52)
+                    print(flush=True)
+        if self.url is None:
+            log("El túnel de Cloudflare no arrancó. Jarvis sigue funcionando en el wifi de casa.")
+        else:
+            log("El túnel de Cloudflare se cerró. Fuera de casa no funcionará hasta reiniciar Jarvis.")
+        self.url = None
+        self.ready.set()
+
+    def stop(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+
+
+def same(given, secret):
+    """Constant-time comparison that also accepts odd characters in headers."""
+    return hmac.compare_digest(given.encode("utf-8", "replace"), secret.encode("utf-8"))
+
+
+class Guard:
+    """Blocks connections from outside for a while after many wrong keys."""
+
+    MAX_FAILURES = 10
+    WINDOW = 10 * 60
+    LOCK = 15 * 60
+
+    def __init__(self):
+        self.failures = []
+        self.locked_until = 0.0
+        self._lock = threading.Lock()
+
+    def locked(self):
+        return time.time() < self.locked_until
+
+    def fail(self, who):
+        with self._lock:
+            now = time.time()
+            self.failures = [t for t in self.failures if now - t < self.WINDOW] + [now]
+            log(f"Clave incorrecta desde fuera ({who}). Intentos recientes: {len(self.failures)}")
+            if len(self.failures) >= self.MAX_FAILURES:
+                self.locked_until = now + self.LOCK
+                self.failures = []
+                log("Demasiados intentos desde fuera: bloqueado 15 minutos.")
 
 
 def lan_ip():
@@ -323,8 +436,10 @@ class Claude:
             return reply
 
 
-def make_handler(cfg, transcriber, claude):
+def make_handler(cfg, transcriber, claude, tunnel=None):
     code = cfg["code"]
+    remote_token = cfg["remote_token"]
+    guard = Guard()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "JarvisBridge/0.1"
@@ -343,8 +458,23 @@ def make_handler(cfg, transcriber, claude):
             self.end_headers()
             self.wfile.write(body)
 
+        def _remote(self):
+            """True for requests that came in through the Cloudflare tunnel."""
+            host = self.headers.get("Host", "").lower()
+            return bool(self.headers.get("Cf-Connecting-Ip")) or host.endswith(".trycloudflare.com")
+
         def _authorized(self):
-            if self.headers.get("X-Jarvis-Code", "") == code:
+            if self._remote():
+                # From outside only the long key counts, never the 6-digit code.
+                if guard.locked():
+                    self._json(429, {"error": "Demasiados intentos. Espera unos minutos."})
+                    return False
+                if same(self.headers.get("X-Jarvis-Token", ""), remote_token):
+                    return True
+                guard.fail(self.headers.get("Cf-Connecting-Ip", "?"))
+                self._json(401, {"error": "Clave incorrecta. Conéctate una vez al wifi de casa."})
+                return False
+            if same(self.headers.get("X-Jarvis-Code", ""), code):
                 return True
             self._json(401, {"error": "Código incorrecto. Revisa el código que muestra el PC."})
             return False
@@ -395,6 +525,12 @@ def make_handler(cfg, transcriber, claude):
                         old.unlink(missing_ok=True)
                     log(f"Foto recibida ({len(data) // 1024} KB)")
                     self._json(200, {"id": image_id})
+                elif self.path == "/remote-info":
+                    # Only on the home wifi: hands the outside link and key to the tablet.
+                    if self._remote():
+                        return self._json(403, {"error": "Solo desde el wifi de casa"})
+                    url = tunnel.url if tunnel else None
+                    self._json(200, {"url": url or "", "token": remote_token if url else ""})
                 elif self.path == "/reset":
                     claude.reset()
                     self._json(200, {"ok": True, "app": "jarvis"})
@@ -441,6 +577,8 @@ def main():
                         help="Deja que Jarvis edite esta carpeta cuando el modo edición está activo")
     parser.add_argument("--remove-folder", action="append", default=[], metavar="RUTA",
                         help="Quita una carpeta de las listas")
+    parser.add_argument("--sin-tunel", action="store_true",
+                        help="No abrir el túnel de Cloudflare (Jarvis solo en el wifi de casa)")
     parser.add_argument("--projects-dir", default=None, metavar="RUTA",
                         help="Carpeta donde Jarvis crea proyectos nuevos (por defecto ~/JarvisProyectos)")
     args = parser.parse_args()
@@ -484,7 +622,8 @@ def main():
     transcriber = Transcriber(args.whisper, args.device)
     claude = Claude(claude_cmd, args.model, cfg["folders"], cfg["edit_folders"], cfg["projects_dir"])
     try:
-        server = BridgeServer(("0.0.0.0", args.port), make_handler(cfg, transcriber, claude))
+        tunnel = None if args.sin_tunel else Tunnel(args.port)
+        server = BridgeServer(("0.0.0.0", args.port), make_handler(cfg, transcriber, claude, tunnel))
     except OSError:
         sys.exit(
             f"El puerto {args.port} ya lo está usando otro programa de esta PC.\n"
@@ -506,9 +645,13 @@ def main():
         for f in claude.edit_folders:
             print(f"    - {f}")
     print(f"  Proyectos nuevos en: {claude.projects_dir}")
+    if tunnel:
+        print("  Fuera de casa: abriendo el túnel de Cloudflare...")
     print("  (Ctrl+C para apagar)")
     print("=" * 52)
     print(flush=True)
+    if tunnel:
+        tunnel.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

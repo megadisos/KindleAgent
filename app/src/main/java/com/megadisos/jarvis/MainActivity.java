@@ -145,7 +145,7 @@ public class MainActivity extends Activity {
                     setStatus("No escuché nada. Toca para hablar");
                     return;
                 }
-                askBridge(audio, new BridgeClient(host, code));
+                askBridge(audio, client());
             }
 
             @Override public void onError(String message) {
@@ -187,7 +187,25 @@ public class MainActivity extends Activity {
     }
 
     private BridgeClient client() {
-        return new BridgeClient(prefs.getString("host", ""), prefs.getString("code", ""));
+        return new BridgeClient(prefs.getString("host", ""), prefs.getString("code", ""))
+                .withRemote(prefs.getString("remote_url", ""), prefs.getString("remote_token", ""));
+    }
+
+    /**
+     * On the home wifi, asks the PC for its Cloudflare link and outside key, so
+     * the tablet can still reach Jarvis away from home. Runs on the network thread.
+     */
+    private void learnRemoteLink() {
+        String host = prefs.getString("host", ""), code = prefs.getString("code", "");
+        if (host.isEmpty() || code.isEmpty()) return;
+        try {
+            String[] info = new BridgeClient(host, code).remoteInfo();
+            if (!info[0].isEmpty() && !info[1].isEmpty()) {
+                prefs.edit().putString("remote_url", info[0]).putString("remote_token", info[1]).apply();
+            }
+        } catch (BridgeClient.BridgeException ignored) {
+            // not at home, or an older bridge without a tunnel: keep what we had
+        }
     }
 
     private BridgeClient.Options options() {
@@ -440,6 +458,7 @@ public class MainActivity extends Activity {
         super.onResume();
         deviceInfo.resume();
         headsetButtons.start();
+        new Thread(this::learnRemoteLink).start();  // not on "network": may wait for a timeout away from home
     }
 
     @Override
@@ -586,6 +605,7 @@ public class MainActivity extends Activity {
                     new BridgeClient(host, code).checkCode();
                     prefs.edit().putString("host", host.trim()).putString("code", code.trim()).apply();
                     callJs("Face.configResult(true, " + JSONObject.quote("¡Conectado con el PC!") + ")");
+                    learnRemoteLink();
                 } catch (BridgeClient.BridgeException e) {
                     callJs("Face.configResult(false, " + JSONObject.quote(e.getMessage()) + ")");
                 }

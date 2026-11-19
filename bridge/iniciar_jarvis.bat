@@ -17,6 +17,16 @@ if not exist ".venv\Scripts\python.exe" (
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :error
 )
 
+rem cloudflared abre el link para usar Jarvis fuera de casa (gratis, sin cuenta).
+where cloudflared >nul 2>nul && goto :run
+if exist "%LOCALAPPDATA%\Microsoft\WinGet\Links\cloudflared.exe" goto :run
+if exist "%ProgramFiles(x86)%\cloudflared\cloudflared.exe" goto :run
+if exist "%ProgramFiles%\cloudflared\cloudflared.exe" goto :run
+echo Instalando cloudflared para usar Jarvis fuera de casa (solo esta vez)...
+winget install --id Cloudflare.cloudflared -e --accept-source-agreements --accept-package-agreements
+if errorlevel 1 echo No pude instalar cloudflared. Jarvis funcionara solo en el wifi de casa.
+
+:run
 ".venv\Scripts\python.exe" jarvis_bridge.py %*
 pause
 exit /b 0
