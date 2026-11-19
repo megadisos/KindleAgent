@@ -182,6 +182,23 @@ public class MainActivity extends Activity {
         return super.dispatchKeyEvent(e);
     }
 
+    private interface Question {
+        BridgeClient.Answer send(BridgeClient client, BridgeClient.Options options) throws BridgeClient.BridgeException;
+    }
+
+    private BridgeClient client() {
+        return new BridgeClient(prefs.getString("host", ""), prefs.getString("code", ""));
+    }
+
+    private BridgeClient.Options options() {
+        BridgeClient.Options o = new BridgeClient.Options();
+        o.model = prefs.getString("model", "sonnet");
+        o.edit = prefs.getBoolean("edit", false);
+        o.shell = o.edit && prefs.getBoolean("shell", false);
+        o.device = deviceInfo.summary();
+        return o;
+    }
+
     private void askBridge(File audio, BridgeClient client) {
         runQuestion((c, o) -> c.ask(audio, o));
     }
