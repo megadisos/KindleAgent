@@ -1,5 +1,5 @@
 /*
- * Jarvis face: two glowing eyes and a mouth on a canvas.
+ * Megadisos face: two glowing eyes and a mouth on a canvas.
  * Public API (called from Android): Face.setMode(m), Face.setLevel(x), Face.setTalking(bool),
  * Face.pulse(), Face.setStatus(text), Face.openSettings(), Face.configResult(ok, msg)
  */
@@ -178,7 +178,7 @@
   }
 
   var GREETINGS = [
-    'Hola Jorge. Soy Jarvis. Así me veo cuando hablo.',
+    'Hola Jorge. Soy Megadisos. Así me veo cuando hablo.',
     'Todos los sistemas en línea. Esperando instrucciones.'
   ];
   var greetingIndex = 0;

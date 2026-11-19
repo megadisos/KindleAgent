@@ -43,7 +43,7 @@ import java.util.Set;
 /**
  * A short, readable summary of the tablet's state (battery, model, storage,
  * memory, wifi, screen, sensors) that goes along with every question, so
- * Jarvis can answer "how much battery do you have?" and the like.
+ * Megadisos can answer "how much battery do you have?" and the like.
  * Light and motion sensors are only listened to while the app is open.
  */
 class DeviceInfo implements SensorEventListener {

@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Live camera preview in a small window over the face, plus grabbing the
- * current frame as a JPEG when Jarvis is asked something. Uses the old
+ * current frame as a JPEG when Megadisos is asked something. Uses the old
  * android.hardware.Camera API: it works on every Fire OS and needs no
  * extra libraries.
  */

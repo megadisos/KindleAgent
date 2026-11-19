@@ -1,5 +1,5 @@
 """
-Jarvis bridge: runs on Jorge's PC and connects the Fire tablet to Claude.
+Megadisos bridge: runs on Jorge's PC and connects the Fire tablet to Claude.
 
 The tablet POSTs recorded audio to /ask. The bridge transcribes it locally
 with Whisper, asks Claude through the Claude Code CLI (which uses the Pro
@@ -97,12 +97,12 @@ def save_conversation(question, reply, model, image=None):
         new = not day.exists()
         with day.open("a", encoding="utf-8") as f:
             if new:
-                f.write(f"# Conversaciones con Jarvis, {time.strftime('%Y-%m-%d')}\n\n")
+                f.write(f"# Conversaciones con Megadisos, {time.strftime('%Y-%m-%d')}\n\n")
             f.write(f"## {time.strftime('%H:%M')} · {model}\n\n")
             f.write(f"**Jorge:** {question}\n\n")
             if image:
                 f.write(f"*(con foto de la cámara: fotos/{Path(image).name})*\n\n")
-            f.write(f"**Jarvis:** {reply}\n\n")
+            f.write(f"**Megadisos:** {reply}\n\n")
         if new:
             for old in sorted(CONVERSATIONS.glob("*.md"))[:-KEEP_CONVERSATION_DAYS]:
                 old.unlink(missing_ok=True)
@@ -195,8 +195,8 @@ class Tunnel:
     def start(self):
         exe = find_cloudflared()
         if not exe:
-            log("No encontré cloudflared: Jarvis solo funcionará en el wifi de casa.")
-            log("Instálalo con:  winget install --id Cloudflare.cloudflared  y vuelve a abrir Jarvis.")
+            log("No encontré cloudflared: Megadisos solo funcionará en el wifi de casa.")
+            log("Instálalo con:  winget install --id Cloudflare.cloudflared  y vuelve a abrir Megadisos.")
             return False
         self.proc = subprocess.Popen(
             [exe, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{self.port}"],
@@ -215,16 +215,16 @@ class Tunnel:
                     self.ready.set()
                     print()
                     print("=" * 52)
-                    print("  Jarvis también está disponible fuera de casa:")
+                    print("  Megadisos también está disponible fuera de casa:")
                     print(f"  {self.url}")
                     print("  La tableta lo aprende sola la próxima vez que")
                     print("  se conecte en el wifi de casa (abre la app).")
                     print("=" * 52)
                     print(flush=True)
         if self.url is None:
-            log("El túnel de Cloudflare no arrancó. Jarvis sigue funcionando en el wifi de casa.")
+            log("El túnel de Cloudflare no arrancó. Megadisos sigue funcionando en el wifi de casa.")
         else:
-            log("El túnel de Cloudflare se cerró. Fuera de casa no funcionará hasta reiniciar Jarvis.")
+            log("El túnel de Cloudflare se cerró. Fuera de casa no funcionará hasta reiniciar Megadisos.")
         self.url = None
         self.ready.set()
 
@@ -353,8 +353,8 @@ class Claude:
 
     Folder access (from ~/.jarvis/config.json):
       folders       read-only project folders
-      edit_folders  folders Jarvis may also edit, but only in edit mode
-      projects_dir  where Jarvis creates new projects, only in edit mode
+      edit_folders  folders Megadisos may also edit, but only in edit mode
+      projects_dir  where Megadisos creates new projects, only in edit mode
     Edit mode is switched on from the tablet for each question.
     """
 
@@ -371,7 +371,7 @@ class Claude:
         self._lock = threading.Lock()
         WORKSPACE.mkdir(parents=True, exist_ok=True)
         # Claude Code reads CLAUDE.md from its working folder: that is where
-        # Jarvis's personality and the list of folders live.
+        # Megadisos's personality and the list of folders live.
         (WORKSPACE / "CLAUDE.md").write_text(self._instructions(), encoding="utf-8")
 
     def _instructions(self):
@@ -421,7 +421,7 @@ class Claude:
                 tools = EDIT_TOOLS + (",Bash" if shell else "")
             else:
                 dirs = self.folders + self.edit_folders + ([self.projects_dir] if self.projects_dir else [])
-                tools = READ_TOOLS  # also lets Jarvis look up past conversations
+                tools = READ_TOOLS  # also lets Megadisos look up past conversations
             for folder in dirs:
                 args += ["--add-dir", folder]
             args += ["--tools", tools, "--allowedTools", tools]
@@ -535,7 +535,7 @@ def make_handler(cfg, transcriber, claude, tunnel=None):
                         return self._json(400, {"error": "Falta el texto"})
                     log(f"Tú (texto): {text}")
                     reply, actions = claude.ask(text, **self._options())
-                    log(f"Jarvis: {reply}")
+                    log(f"Megadisos: {reply}")
                     for a in actions:
                         log(f"  en la tableta: {a}")
                     self._json(200, {"heard": text, "reply": reply, "actions": actions})
@@ -582,7 +582,7 @@ def make_handler(cfg, transcriber, claude, tunnel=None):
             if not heard:
                 return self._json(200, {"heard": "", "reply": "No te escuché bien. ¿Me lo repites?"})
             reply, actions = claude.ask(heard, **self._options())
-            log(f"Jarvis: {reply}")
+            log(f"Megadisos: {reply}")
             for a in actions:
                 log(f"  en la tableta: {a}")
             self._json(200, {"heard": heard, "reply": reply, "actions": actions})
@@ -591,7 +591,7 @@ def make_handler(cfg, transcriber, claude, tunnel=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Puente entre la tableta Jarvis y Claude")
+    parser = argparse.ArgumentParser(description="Puente entre la tableta Megadisos y Claude")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--model", default="sonnet", choices=MODELS,
                         help="Modelo por defecto si la tableta no elige uno")
@@ -599,15 +599,15 @@ def main():
     parser.add_argument("--device", default="cpu", help="cpu o cuda (si tienes tarjeta NVIDIA)")
     parser.add_argument("--claude", default=None, help="Ruta al comando claude si no está en el PATH")
     parser.add_argument("--add-folder", action="append", default=[], metavar="RUTA",
-                        help="Deja que Jarvis lea esta carpeta de proyecto (se guarda para la próxima vez)")
+                        help="Deja que Megadisos lea esta carpeta de proyecto (se guarda para la próxima vez)")
     parser.add_argument("--add-folder-edit", action="append", default=[], metavar="RUTA",
-                        help="Deja que Jarvis edite esta carpeta cuando el modo edición está activo")
+                        help="Deja que Megadisos edite esta carpeta cuando el modo edición está activo")
     parser.add_argument("--remove-folder", action="append", default=[], metavar="RUTA",
                         help="Quita una carpeta de las listas")
     parser.add_argument("--sin-tunel", action="store_true",
-                        help="No abrir el túnel de Cloudflare (Jarvis solo en el wifi de casa)")
+                        help="No abrir el túnel de Cloudflare (Megadisos solo en el wifi de casa)")
     parser.add_argument("--projects-dir", default=None, metavar="RUTA",
-                        help="Carpeta donde Jarvis crea proyectos nuevos (por defecto ~/JarvisProyectos)")
+                        help="Carpeta donde Megadisos crea proyectos nuevos (por defecto ~/JarvisProyectos)")
     args = parser.parse_args()
 
     claude_cmd = args.claude or find_claude()
@@ -661,7 +661,7 @@ def main():
 
     print()
     print("=" * 52)
-    print("  Jarvis está escuchando")
+    print("  Megadisos está escuchando")
     print(f"  En la tableta escribe:  IP {lan_ip()}   puerto {args.port}   código {cfg['code']}")
     if claude.folders:
         print("  Solo lectura:")
