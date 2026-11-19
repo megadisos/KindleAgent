@@ -20,7 +20,13 @@ class BridgeClient {
     static class Answer {
         final String heard;
         final String reply;
+        org.json.JSONArray actions = new org.json.JSONArray();  // orders for the tablet
         Answer(String heard, String reply) { this.heard = heard; this.reply = reply; }
+        Answer(JSONObject json) {
+            this(json.optString("heard"), json.optString("reply"));
+            org.json.JSONArray a = json.optJSONArray("actions");
+            if (a != null) actions = a;
+        }
     }
 
     static class BridgeException extends Exception {
@@ -110,7 +116,7 @@ class BridgeClient {
         }
         JSONObject json = request("POST", "/chat", "application/json",
                 body.getBytes(StandardCharsets.UTF_8), 330000);
-        return new Answer(json.optString("heard"), json.optString("reply"));
+        return new Answer(json);
     }
 
     private void setOptions(Options o) {
@@ -142,7 +148,7 @@ class BridgeClient {
         setOptions(o);
         // Edits can take the PC a few minutes; the bridge gives up at 300 s.
         JSONObject json = request("POST", "/ask", "audio/mp4", bytes, 330000);
-        return new Answer(json.optString("heard"), json.optString("reply"));
+        return new Answer(json);
     }
 
     /** Home wifi first, then the Cloudflare link (or the other way round when away). */

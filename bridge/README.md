@@ -75,6 +75,14 @@ Con cada pregunta, la app manda un resumen del estado de la tableta: batería (y
 
 La ubicación pide permiso la primera vez que abres la app. Si dijiste que no, o Jarvis dice que la ubicación está apagada, actívala en la tableta en **Configuración → Ubicación** (y en **Apps → Jarvis → Permisos**). La Fire no tiene GPS: la ubica por el wifi, así que es aproximada.
 
+## Música y apps de la tableta
+
+Pídele cosas como "pon música de Shakira", "pausa", "sube el volumen", "abre Netflix" o "cierra Netflix":
+
+- **Música:** Jarvis busca la canción en YouTube y la pone en una ventanita abajo a la derecha, sin tapar la cara. Cuando le hablas, la música se pausa sola y sigue cuando te responde. La ✕ o "quita la música" la cierra.
+- **Apps:** abre cualquier app instalada; Jarvis sabe cuáles tienes. Para seguir hablándole, vuelve a Jarvis. "Cierra X" pausa lo que suene y cierra esa app en segundo plano. Android no deja que una app cierre a otra que está en pantalla, por eso primero hay que volver a Jarvis.
+- **Links:** "abre la página de..." la abre en el navegador.
+
 ## Usar Jarvis fuera de casa
 
 `iniciar_jarvis.bat` instala **cloudflared** la primera vez (gratis, sin cuenta) y abre un túnel de Cloudflare. La ventana muestra un link como `https://algo-raro.trycloudflare.com`.

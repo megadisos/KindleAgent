@@ -110,6 +110,28 @@ def save_conversation(question, reply, model, image=None):
         log("No pude guardar la conversación:", exc)
 
 
+TABLET_TAG = re.compile(r"<tableta>(.*?)</tableta>", re.S | re.I)
+TABLET_ACTIONS = {"abrir_app", "cerrar_app", "abrir_url", "musica", "parar_musica",
+                  "pausar", "seguir", "volumen"}
+
+
+def split_actions(text):
+    """Takes the <tableta>{...}</tableta> orders out of Claude's answer.
+
+    Returns the text to speak and the list of orders for the tablet to run.
+    """
+    actions = []
+    for raw in TABLET_TAG.findall(text):
+        try:
+            a = json.loads(raw.strip())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(a, dict) and a.get("accion") in TABLET_ACTIONS:
+            actions.append(a)
+    spoken = TABLET_TAG.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", spoken).strip(), actions[:5]
+
+
 def device_status(raw):
     """Tablet battery/model/etc. summary sent URL-encoded by the app."""
     text = urllib.parse.unquote_plus(raw or "")
@@ -431,9 +453,10 @@ class Claude:
                 raise RuntimeError(str(data.get("result") or data))
             self.session_id = data.get("session_id") or self.session_id
             self.last_used = time.time()
-            reply = (data.get("result") or "").strip()
-            save_conversation(question, reply, model, image)
-            return reply
+            reply, actions = split_actions(data.get("result") or "")
+            save_conversation(question, reply + "".join(f"\n\n*(en la tableta: {json.dumps(a, ensure_ascii=False)})*"
+                                                       for a in actions), model, image)
+            return reply, actions
 
 
 def make_handler(cfg, transcriber, claude, tunnel=None):
@@ -511,9 +534,11 @@ def make_handler(cfg, transcriber, claude, tunnel=None):
                     if not text:
                         return self._json(400, {"error": "Falta el texto"})
                     log(f"Tú (texto): {text}")
-                    reply = claude.ask(text, **self._options())
+                    reply, actions = claude.ask(text, **self._options())
                     log(f"Jarvis: {reply}")
-                    self._json(200, {"heard": text, "reply": reply})
+                    for a in actions:
+                        log(f"  en la tableta: {a}")
+                    self._json(200, {"heard": text, "reply": reply, "actions": actions})
                 elif self.path == "/image":
                     data = self._body()
                     if not data.startswith(b"\xff\xd8"):
@@ -556,9 +581,11 @@ def make_handler(cfg, transcriber, claude, tunnel=None):
             log(f"Tú: {heard or '(nada)'}")
             if not heard:
                 return self._json(200, {"heard": "", "reply": "No te escuché bien. ¿Me lo repites?"})
-            reply = claude.ask(heard, **self._options())
+            reply, actions = claude.ask(heard, **self._options())
             log(f"Jarvis: {reply}")
-            self._json(200, {"heard": heard, "reply": reply})
+            for a in actions:
+                log(f"  en la tableta: {a}")
+            self._json(200, {"heard": heard, "reply": reply, "actions": actions})
 
     return Handler
 
