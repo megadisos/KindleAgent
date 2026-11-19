@@ -299,23 +299,44 @@ def decode_audio(path, rate=16000):
     return np.concatenate(chunks).astype(np.float32) / 32768.0
 
 
+DEFAULT_WHISPER = "large-v3-turbo"
+FALLBACK_WHISPER = "small"
+# Words Whisper should expect, so it writes them right instead of guessing.
+VOCABULARY = ("Megadisos, Jorge, Claude, YouTube, Spotify, WhatsApp, Netflix, Bogotá, "
+              "Colombia, tableta, audífonos, Bluetooth, wifi, carpeta, proyecto, archivo.")
+
+
 class Transcriber:
     """Local speech-to-text with faster-whisper. The model loads on first use."""
 
-    def __init__(self, model_name, device):
+    def __init__(self, model_name, device, extra_words=()):
         self.model_name = model_name
         self.device = device
         self._model = None
         self._lock = threading.Lock()
+        words = [w for w in extra_words if w]
+        self.prompt = "Conversación en español con Megadisos. " + VOCABULARY
+        if words:
+            self.prompt += " " + ", ".join(words[:30]) + "."
+
+    def _open(self, name):
+        from faster_whisper import WhisperModel
+
+        compute = "int8" if self.device == "cpu" else "float16"
+        return WhisperModel(name, device=self.device, compute_type=compute)
 
     def load(self):
         with self._lock:
             if self._model is None:
-                from faster_whisper import WhisperModel
-
                 log(f"Cargando Whisper '{self.model_name}' (la primera vez se descarga)...")
-                compute = "int8" if self.device == "cpu" else "float16"
-                self._model = WhisperModel(self.model_name, device=self.device, compute_type=compute)
+                try:
+                    self._model = self._open(self.model_name)
+                except Exception as e:  # unknown name, no memory, download failed...
+                    if self.model_name == FALLBACK_WHISPER:
+                        raise
+                    log(f"No pude cargar '{self.model_name}' ({e}). Uso '{FALLBACK_WHISPER}'.")
+                    self.model_name = FALLBACK_WHISPER
+                    self._model = self._open(self.model_name)
                 log("Whisper listo.")
         return self._model
 
@@ -324,10 +345,19 @@ class Transcriber:
         audio = decode_audio(audio_path)
         if audio.size < 1600:  # less than 0.1 s
             return ""
+        start = time.time()
         segments, _ = model.transcribe(
-            audio, language="es", vad_filter=True, beam_size=5
+            audio,
+            language="es",
+            beam_size=5,
+            initial_prompt=self.prompt,
+            condition_on_previous_text=False,  # one mistake does not drag into the next sentence
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 700, "speech_pad_ms": 300},
         )
-        return " ".join(seg.text.strip() for seg in segments).strip()
+        text = " ".join(seg.text.strip() for seg in segments).strip()
+        log(f"Whisper ({self.model_name}) tardó {time.time() - start:.1f} s")
+        return text
 
 
 MODELS = ("haiku", "sonnet", "opus")
@@ -595,7 +625,9 @@ def main():
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--model", default="sonnet", choices=MODELS,
                         help="Modelo por defecto si la tableta no elige uno")
-    parser.add_argument("--whisper", default="small", help="Modelo de Whisper: base, small, medium...")
+    parser.add_argument("--whisper", default=None,
+                        help="Modelo de Whisper: large-v3-turbo (por defecto, el más preciso), "
+                             "medium, small o base (más rápidos). Se guarda para la próxima vez")
     parser.add_argument("--device", default="cpu", help="cpu o cuda (si tienes tarjeta NVIDIA)")
     parser.add_argument("--claude", default=None, help="Ruta al comando claude si no está en el PATH")
     parser.add_argument("--add-folder", action="append", default=[], metavar="RUTA",
@@ -643,10 +675,13 @@ def main():
     if args.projects_dir:
         cfg["projects_dir"] = str(Path(args.projects_dir).expanduser().resolve())
     cfg.setdefault("projects_dir", str(Path.home() / "JarvisProyectos"))
+    if args.whisper:
+        cfg["whisper"] = args.whisper
     if json.dumps(cfg, sort_keys=True) != original:
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    transcriber = Transcriber(args.whisper, args.device)
+    words = [os.path.basename(os.path.normpath(f)) for f in cfg["folders"] + cfg["edit_folders"]]
+    transcriber = Transcriber(cfg.get("whisper", DEFAULT_WHISPER), args.device, words)
     claude = Claude(claude_cmd, args.model, cfg["folders"], cfg["edit_folders"], cfg["projects_dir"])
     try:
         tunnel = None if args.sin_tunel else Tunnel(args.port)
