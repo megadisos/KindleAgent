@@ -34,6 +34,10 @@ HOME = Path.home() / ".jarvis"
 WORKSPACE = HOME / "workspace"
 CONFIG_FILE = HOME / "config.json"
 IMAGES = WORKSPACE / "fotos"
+# One Markdown file per day with every question and answer: easy to read,
+# search, or paste into another AI.
+CONVERSATIONS = WORKSPACE / "conversaciones"
+KEEP_CONVERSATION_DAYS = 365
 MAX_IMAGES = 30
 
 # A conversation is continued while you keep talking; after this many
@@ -72,6 +76,27 @@ def load_config():
         cfg["code"] = f"{secrets.randbelow(10**6):06d}"
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return cfg
+
+
+def save_conversation(question, reply, model, image=None):
+    """Appends one exchange to conversaciones/AAAA-MM-DD.md. Never fails the answer."""
+    try:
+        CONVERSATIONS.mkdir(parents=True, exist_ok=True)
+        day = CONVERSATIONS / (time.strftime("%Y-%m-%d") + ".md")
+        new = not day.exists()
+        with day.open("a", encoding="utf-8") as f:
+            if new:
+                f.write(f"# Conversaciones con Jarvis, {time.strftime('%Y-%m-%d')}\n\n")
+            f.write(f"## {time.strftime('%H:%M')} · {model}\n\n")
+            f.write(f"**Jorge:** {question}\n\n")
+            if image:
+                f.write(f"*(con foto de la cámara: fotos/{Path(image).name})*\n\n")
+            f.write(f"**Jarvis:** {reply}\n\n")
+        if new:
+            for old in sorted(CONVERSATIONS.glob("*.md"))[:-KEEP_CONVERSATION_DAYS]:
+                old.unlink(missing_ok=True)
+    except OSError as exc:
+        log("No pude guardar la conversación:", exc)
 
 
 def device_status(raw):
@@ -236,6 +261,7 @@ class Claude:
 
     def ask(self, text, model=None, edit=False, shell=False, image=None, device=None):
         model = model if model in MODELS else self.model
+        question = text
         if device:
             text = (
                 f"{text}\n\n[Estado actual de la tableta, leído ahora mismo por la app "
@@ -260,7 +286,7 @@ class Claude:
                 tools = EDIT_TOOLS + (",Bash" if shell else "")
             else:
                 dirs = self.folders + self.edit_folders + ([self.projects_dir] if self.projects_dir else [])
-                tools = READ_TOOLS if (dirs or image) else "WebSearch"
+                tools = READ_TOOLS  # also lets Jarvis look up past conversations
             for folder in dirs:
                 args += ["--add-dir", folder]
             args += ["--tools", tools, "--allowedTools", tools]
@@ -292,7 +318,9 @@ class Claude:
                 raise RuntimeError(str(data.get("result") or data))
             self.session_id = data.get("session_id") or self.session_id
             self.last_used = time.time()
-            return (data.get("result") or "").strip()
+            reply = (data.get("result") or "").strip()
+            save_conversation(question, reply, model, image)
+            return reply
 
 
 def make_handler(cfg, transcriber, claude):

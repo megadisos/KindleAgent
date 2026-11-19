@@ -6,7 +6,7 @@ Convierte una tableta Amazon Fire 7 en un asistente de voz con cara animada que 
 
 - [x] **Paso 1: la cara.** App a pantalla completa con ojos que parpadean y una boca que se mueve al hablar. Tocar la cara la hace decir un saludo con la voz de la tableta.
 - [x] **Paso 2: la voz.** Tocas la cara, hablas, la tableta envía el audio al PC, el PC lo pasa a texto con Whisper y le pregunta a Claude Code, y la tableta dice la respuesta.
-- [x] **Extras:** escribirle con el teclado (⌨), cámara en vivo para que vea lo que tienes enfrente (📷), conoce su batería y sensores (🔋), elegir modelo, modo edición, terminal y ajustes de voz.
+- [x] **Extras:** escribirle con el teclado (⌨), cámara en vivo para que vea lo que tienes enfrente (📷), conoce su batería, sensores y ubicación (🔋📍), elegir modelo, modo edición, terminal, escoger o descargar la voz, y hablarle por audífonos Bluetooth (🎧).
 - [ ] **Paso 3: modo Jarvis.** Abrir al encender, personalidad, memoria.
 - [ ] **Paso 4: extras.** Recordatorios, clima, etc.
 

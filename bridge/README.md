@@ -71,7 +71,26 @@ Las carpetas quedan guardadas y la ventana las muestra al arrancar.
 
 ## Estado de la tableta
 
-Con cada pregunta, la app manda un resumen del estado de la tableta: batería (y si está cargando), temperatura, modelo, almacenamiento, memoria RAM, señal de wifi, pantalla y brillo, volumen, luz ambiente, si está de pie o acostada y qué sensores tiene. Así puedes preguntarle "¿cuánta batería tienes?" o "¿cuánto espacio te queda?". Solo se usa para responder; no se guarda.
+Con cada pregunta, la app manda un resumen del estado de la tableta: batería (y si está cargando), temperatura, modelo, almacenamiento, memoria RAM, wifi, ubicación, pantalla y brillo, volumen, luz ambiente, si está de pie o acostada y qué sensores tiene. Así puedes preguntarle "¿cuánta batería tienes?" o "¿cuánto espacio te queda?". Solo se usa para responder; no se guarda.
+
+La ubicación pide permiso la primera vez que abres la app. Si dijiste que no, o Jarvis dice que la ubicación está apagada, actívala en la tableta en **Configuración → Ubicación** (y en **Apps → Jarvis → Permisos**). La Fire no tiene GPS: la ubica por el wifi, así que es aproximada.
+
+## Audífonos Bluetooth
+
+Si conectas audífonos Bluetooth con micrófono (por ejemplo Galaxy Buds) a la tableta, Jarvis te escucha por el micrófono de los audífonos y te responde por ellos. Al empezar a escuchar tarda un segundo en abrir el micrófono (dice "Conectando el micrófono de los audífonos…").
+
+Un toque en el audífono (el de pausar o reproducir) hace lo mismo que tocar la cara: empieza a escuchar, termina de escuchar o interrumpe a Jarvis cuando está hablando. Funciona con la app abierta.
+
+## Voz de Jarvis
+
+En ⚙ → **Voz** escoges entre las voces que tenga la tableta (al cambiarla suena una prueba), y ajustas tono y velocidad. **⬇ Descargar más voces** abre la pantalla del motor de voz de la tableta para bajar voces nuevas; al volver aparecen en la lista. Las que dicen "por descargar" se bajan solas la primera vez que se usan (si el motor lo permite), y las que dicen "usa internet" necesitan wifi.
+
+## Conversaciones guardadas
+
+Cada pregunta y respuesta se guarda en `%USERPROFILE%\.jarvis\workspace\conversaciones`, un archivo por día (`2026-11-18.md`), en texto simple que se abre con el Bloc de notas. Se guardan los últimos 365 días. Sirven para dos cosas:
+
+- Jarvis las consulta si le preguntas por algo que hablaron otro día.
+- Si algún día cambias de IA, puedes copiar esos archivos y pegárselos.
 
 ## Cambiar de modelo
 

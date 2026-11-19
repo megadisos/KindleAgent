@@ -217,7 +217,7 @@
   var settingsEl = $('settings');
   var hostEl = $('host'), portEl = $('port'), codeEl = $('code');
   var modelEl = $('model'), editEl = $('edit'), shellEl = $('shell'), cameraEl = $('camera');
-  var pitchEl = $('pitch'), rateEl = $('rate');
+  var pitchEl = $('pitch'), rateEl = $('rate'), voiceEl = $('voice');
   var msgEl = $('settings-msg'), saveEl = $('save');
   var DEFAULT_PORT = '8737';
 
@@ -254,6 +254,7 @@
     shellEl.checked = !!cfg.shell;
     cameraEl.value = cfg.camera === 'front' ? 'front' : 'back';
     syncShell();
+    fillVoices(cfg.voice || '');
     pitchEl.value = cfg.pitch || 1;
     rateEl.value = cfg.rate || 1;
     showVoiceValues();
@@ -261,6 +262,19 @@
     msgEl.className = '';
     saveEl.disabled = false;
     settingsEl.hidden = false;
+  }
+  function fillVoices(selected) {
+    var list = [];
+    try { list = JSON.parse(window.Android && window.Android.getVoices ? window.Android.getVoices() : '[]'); } catch (e) { }
+    while (voiceEl.options.length > 1) voiceEl.remove(1);
+    list.forEach(function (v) {
+      var o = document.createElement('option');
+      o.value = v.name;
+      o.textContent = v.label;
+      voiceEl.appendChild(o);
+    });
+    voiceEl.value = selected;
+    if (voiceEl.value !== selected) voiceEl.value = '';  // that voice is gone
   }
   function closeSettings() { settingsEl.hidden = true; }
 
@@ -271,7 +285,8 @@
       shell: editEl.checked && shellEl.checked,
       camera: cameraEl.value,
       pitch: Number(pitchEl.value),
-      rate: Number(rateEl.value)
+      rate: Number(rateEl.value),
+      voice: voiceEl.value
     };
   }
 
@@ -281,12 +296,25 @@
     var p = prefs();
     var sample = 'Hola Jorge. Así sonaría mi voz.';
     if (window.Android && window.Android.previewVoice) {
-      window.Android.previewVoice(sample, p.pitch, p.rate);
+      window.Android.previewVoice(sample, p.pitch, p.rate, p.voice);
     } else if ('speechSynthesis' in window) {
       var u = new SpeechSynthesisUtterance(sample);
       u.lang = 'es-ES'; u.pitch = p.pitch; u.rate = p.rate;
       speechSynthesis.cancel(); speechSynthesis.speak(u);
     }
+  });
+
+  voiceEl.addEventListener('change', function () { $('preview').click(); });
+  $('voice-dl').addEventListener('click', function () {
+    if (window.Android && window.Android.downloadVoices) {
+      window.Android.downloadVoices();
+      msgEl.textContent = 'Cuando termines de descargar, vuelve y abre ⚙ otra vez para ver las voces nuevas.';
+      msgEl.className = 'ok';
+    }
+  });
+  // Coming back from the download screen: refresh the list if settings are open.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && !settingsEl.hidden) fillVoices(voiceEl.value);
   });
 
   $('gear').addEventListener('click', openSettings);

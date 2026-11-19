@@ -1,6 +1,15 @@
 package com.megadisos.jarvis;
 
+import android.Manifest;
 import android.app.ActivityManager;
+import android.content.pm.PackageManager;
+import android.location.Address;
+import android.location.Geocoder;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.os.Bundle;
+import android.os.Looper;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -10,6 +19,10 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
@@ -43,9 +56,11 @@ class DeviceInfo implements SensorEventListener {
     DeviceInfo(Context context) {
         this.context = context.getApplicationContext();
         this.sensors = (SensorManager) this.context.getSystemService(Context.SENSOR_SERVICE);
+        this.locations = (LocationManager) this.context.getSystemService(Context.LOCATION_SERVICE);
     }
 
     void resume() {
+        startLocation();
         if (sensors == null) return;
         Sensor light = sensors.getDefaultSensor(Sensor.TYPE_LIGHT);
         Sensor accel = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
@@ -55,6 +70,94 @@ class DeviceInfo implements SensorEventListener {
 
     void pause() {
         if (sensors != null) sensors.unregisterListener(this);
+        if (locations != null) {
+            try { locations.removeUpdates(locationListener); } catch (RuntimeException ignored) { }
+        }
+    }
+
+    // ---- location -----------------------------------------------------------
+
+    private final LocationManager locations;
+    private volatile Location lastLocation;
+    private volatile String address;  // from Geocoder, when the tablet has one
+    private volatile Location geocoded;
+
+    private final LocationListener locationListener = new LocationListener() {
+        @Override public void onLocationChanged(Location l) { useLocation(l); }
+        @Override public void onStatusChanged(String p, int s, Bundle b) { }
+        @Override public void onProviderEnabled(String p) { }
+        @Override public void onProviderDisabled(String p) { }
+    };
+
+    boolean hasLocationPermission() {
+        return Build.VERSION.SDK_INT < 23
+                || context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Last known fix right away, then updates every few minutes while the app is open. */
+    @SuppressWarnings("MissingPermission")
+    void startLocation() {
+        if (locations == null || !hasLocationPermission()) return;
+        try {
+            for (String p : locations.getProviders(true)) {
+                Location l = locations.getLastKnownLocation(p);
+                if (l != null) useLocation(l);
+            }
+            for (String p : new String[]{LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER}) {
+                if (locations.isProviderEnabled(p)) {
+                    locations.requestLocationUpdates(p, 5 * 60 * 1000L, 100f, locationListener, Looper.getMainLooper());
+                }
+            }
+        } catch (RuntimeException ignored) { }
+    }
+
+    private void useLocation(Location l) {
+        Location old = lastLocation;
+        boolean better = old == null
+                || l.getTime() - old.getTime() > 2 * 60 * 1000
+                || l.getAccuracy() < old.getAccuracy();
+        if (!better) return;
+        lastLocation = l;
+        Location g = geocoded;
+        if (Geocoder.isPresent() && (g == null || g.distanceTo(l) > 300)) {
+            geocoded = l;
+            new Thread(() -> {
+                try {
+                    List<Address> found = new Geocoder(context, new Locale("es"))
+                            .getFromLocation(l.getLatitude(), l.getLongitude(), 1);
+                    if (found != null && !found.isEmpty()) address = describe(found.get(0));
+                } catch (Exception ignored) { }
+            }).start();
+        }
+    }
+
+    private static String describe(Address a) {
+        List<String> parts = new ArrayList<>();
+        if (a.getThoroughfare() != null) {
+            parts.add(a.getThoroughfare() + (a.getSubThoroughfare() != null ? " " + a.getSubThoroughfare() : ""));
+        }
+        for (String p : new String[]{a.getSubLocality(), a.getLocality(), a.getAdminArea(), a.getCountryName()}) {
+            if (p != null && !parts.contains(p)) parts.add(p);
+        }
+        return TextUtils.join(", ", parts);
+    }
+
+    private String location() {
+        if (!hasLocationPermission()) return "ubicación sin permiso";
+        Location l = lastLocation;
+        if (l == null) {
+            boolean on = locations != null && (locations.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                    || locations.isProviderEnabled(LocationManager.GPS_PROVIDER));
+            return on ? "ubicación todavía no disponible" : "ubicación apagada en la configuración de la tableta";
+        }
+        long ageMin = (System.currentTimeMillis() - l.getTime()) / 60000;
+        StringBuilder s = new StringBuilder(String.format(Locale.US, "ubicación %.5f, %.5f (±%.0f m",
+                l.getLatitude(), l.getLongitude(), l.getAccuracy()));
+        s.append(ageMin > 1 ? ", de hace " + duration(ageMin * 60) + ")" : ")");
+        String a = address;
+        if (a != null && !a.isEmpty()) s.append(", cerca de ").append(a);
+        return s.toString();
     }
 
     @Override
@@ -74,6 +177,7 @@ class DeviceInfo implements SensorEventListener {
         add(parts, this::storage);
         add(parts, this::memory);
         add(parts, this::wifi);
+        add(parts, this::location);
         add(parts, this::screen);
         add(parts, this::sound);
         add(parts, this::position);
@@ -140,12 +244,35 @@ class DeviceInfo implements SensorEventListener {
 
     @SuppressWarnings("deprecation")
     private String wifi() {
+        // WifiInfo hides the network id without location permission on newer
+        // Fire OS, so ask ConnectivityManager whether wifi is connected.
+        ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        boolean connected = false;
+        if (cm != null) {
+            if (Build.VERSION.SDK_INT >= 23) {
+                Network n = cm.getActiveNetwork();
+                NetworkCapabilities caps = n == null ? null : cm.getNetworkCapabilities(n);
+                connected = caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
+            } else {
+                NetworkInfo ni = cm.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+                connected = ni != null && ni.isConnected();
+            }
+        }
         WifiManager wm = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-        if (wm == null || !wm.isWifiEnabled()) return "wifi apagado";
-        WifiInfo w = wm.getConnectionInfo();
-        if (w == null || w.getNetworkId() == -1) return "wifi sin conectar";
-        int bars = WifiManager.calculateSignalLevel(w.getRssi(), 5);
-        return "wifi señal " + bars + "/4 (" + w.getRssi() + " dBm, " + w.getLinkSpeed() + " Mbps)";
+        if (!connected) return wm != null && !wm.isWifiEnabled() ? "wifi apagado" : "wifi sin conectar";
+        StringBuilder s = new StringBuilder("wifi conectado");
+        WifiInfo w = wm == null ? null : wm.getConnectionInfo();
+        if (w != null) {
+            String ssid = w.getSSID();
+            if (ssid != null && !ssid.contains("unknown ssid")) s.append(" a ").append(ssid.replace("\"", ""));
+            if (w.getRssi() > -127) {
+                s.append(", señal ").append(WifiManager.calculateSignalLevel(w.getRssi(), 5)).append("/4 (")
+                        .append(w.getRssi()).append(" dBm");
+                if (w.getLinkSpeed() > 0) s.append(", ").append(w.getLinkSpeed()).append(" Mbps");
+                s.append(")");
+            }
+        }
+        return s.toString();
     }
 
     private String screen() throws Settings.SettingNotFoundException {

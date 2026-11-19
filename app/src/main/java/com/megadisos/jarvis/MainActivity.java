@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
  *
  * JS -> Android: window.Android.listen(), stopListening(), stop(), speak(text),
  *                getConfig(), saveConfig(host, code), savePrefs(json),
- *                previewVoice(text, pitch, rate), sendText(text), toggleCamera(), flipCamera(), setTyping(on)
+ *                previewVoice(text, pitch, rate, voice), getVoices(), downloadVoices(), sendText(text), toggleCamera(), flipCamera(), setTyping(on)
  * Android -> JS: Face.setMode(mode), Face.setLevel(x), Face.setTalking(bool),
  *                Face.pulse(), Face.setStatus(text), Face.configResult(ok, msg)
  */
@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_MIC = 1;
     private static final int REQ_CAM = 2;
+    private static final int REQ_LOC = 3;
     private static final String PREFS = "jarvis";
 
     private WebView webView;
@@ -48,6 +49,9 @@ public class MainActivity extends Activity {
     private boolean listenAfterPermission = false;
     private LiveCamera liveCamera;
     private DeviceInfo deviceInfo;
+    private BluetoothMic btMic;
+    private HeadsetButtons headsetButtons;
+    private volatile boolean thinking;  // waiting for the PC's answer
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -56,6 +60,15 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         deviceInfo = new DeviceInfo(this);
+        btMic = new BluetoothMic(this);
+        headsetButtons = new HeadsetButtons(this, () -> runOnUiThread(this::onHeadsetTap));
+        if (Build.VERSION.SDK_INT >= 23 && !deviceInfo.hasLocationPermission()
+                && !prefs.getBoolean("asked_location", false)) {
+            // Asked once, so Jarvis can tell where the tablet is. Can be changed later in Android settings.
+            prefs.edit().putBoolean("asked_location", true).apply();
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOC);
+        }
         if (!prefs.getBoolean("camera_back_default", false)) {
             // From 0.6.1 the back camera is the default, also for earlier installs.
             prefs.edit().putString("camera", "back").putBoolean("camera_back_default", true).apply();
@@ -96,7 +109,7 @@ public class MainActivity extends Activity {
                     callJs("Face.pulse()");
                 }
             });
-            applyVoice(prefs.getFloat("pitch", 1f), prefs.getFloat("rate", 1f));
+            applyVoice(prefs.getFloat("pitch", 1f), prefs.getFloat("rate", 1f), prefs.getString("voice", ""));
             ttsReady = true;
         });
     }
@@ -118,13 +131,15 @@ public class MainActivity extends Activity {
         }
         if (tts != null) tts.stop();
         callJs("Face.setMode('listening')");
-        setStatus("Te escucho…");
-        listener.start(new Listener.Callback() {
+        boolean earbuds = btMic.available();
+        setStatus(earbuds ? "Conectando el micrófono de los audífonos…" : "Te escucho…");
+        Listener.Callback cb = new Listener.Callback() {
             @Override public void onLevel(float level) {
                 callJs("Face.setLevel(" + level + ")");
             }
 
             @Override public void onFinished(File audio, boolean heardSpeech) {
+                btMic.disconnect();
                 if (!heardSpeech) {
                     callJs("Face.setMode('idle')");
                     setStatus("No escuché nada. Toca para hablar");
@@ -134,10 +149,37 @@ public class MainActivity extends Activity {
             }
 
             @Override public void onError(String message) {
+                btMic.disconnect();
                 callJs("Face.setMode('idle')");
                 setStatus(message);
             }
+        };
+        btMic.connect(bluetooth -> {
+            setStatus(bluetooth ? "Te escucho por los audífonos…" : "Te escucho…");
+            listener.start(cb, bluetooth);
         });
+    }
+
+    /** A tap on the earbuds: talk, stop talking, or interrupt Jarvis. */
+    private void onHeadsetTap() {
+        if (listener.isListening()) {
+            listener.finish();
+        } else if (tts != null && tts.isSpeaking()) {
+            tts.stop();
+            callJs("Face.setTalking(false)");
+        } else if (!thinking) {
+            startListening();
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent e) {
+        // When the app is in front some tablets deliver the tap as a key instead.
+        if (HeadsetButtons.isTap(e.getKeyCode())) {
+            if (e.getAction() == android.view.KeyEvent.ACTION_UP) onHeadsetTap();
+            return true;
+        }
+        return super.dispatchKeyEvent(e);
     }
 
     private interface Question {
@@ -162,6 +204,7 @@ public class MainActivity extends Activity {
     }
 
     private void runQuestion(Question question) {
+        thinking = true;
         callJs("Face.setMode('thinking')");
         setStatus("Pensando…");
         BridgeClient.Options o = options();
@@ -185,10 +228,12 @@ public class MainActivity extends Activity {
                 }
             }
             BridgeClient.Answer answer = question.send(c, o);
+            thinking = false;
             callJs("Face.setMode('idle')");
             setStatus(answer.heard.isEmpty() ? "" : "«" + answer.heard + "»");
             speak(answer.reply);
         } catch (BridgeClient.BridgeException e) {
+            thinking = false;
             callJs("Face.setMode('idle')");
             setStatus(e.getMessage());
             speak("Tengo un problema para conectarme con el computador.");
@@ -251,10 +296,85 @@ public class MainActivity extends Activity {
         setStatus("front".equals(next) ? "Cámara frontal" : "Cámara trasera");
     }
 
-    private void applyVoice(float pitch, float rate) {
+    private void applyVoice(float pitch, float rate, String voiceName) {
         if (tts == null) return;
         tts.setPitch(pitch);
         tts.setSpeechRate(rate);
+        android.speech.tts.Voice v = findVoice(voiceName);
+        if (v != null) {
+            tts.setVoice(v);
+        } else {
+            int result = tts.setLanguage(new Locale("es", "US"));
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                tts.setLanguage(new Locale("es"));
+            }
+        }
+    }
+
+    private android.speech.tts.Voice findVoice(String name) {
+        if (name == null || name.isEmpty()) return null;
+        try {
+            for (android.speech.tts.Voice v : tts.getVoices()) {
+                if (name.equals(v.getName())) return v;
+            }
+        } catch (RuntimeException ignored) { }
+        return null;
+    }
+
+    /** Spanish voices first, then English, as JSON for the settings list. */
+    private String voiceList() {
+        org.json.JSONArray out = new org.json.JSONArray();
+        if (!ttsReady) return out.toString();
+        try {
+            java.util.List<android.speech.tts.Voice> voices = new java.util.ArrayList<>(tts.getVoices());
+            java.util.Collections.sort(voices, (a, b) -> {
+                int ra = rank(a), rb = rank(b);
+                if (ra != rb) return ra - rb;
+                int c = a.getLocale().toString().compareTo(b.getLocale().toString());
+                return c != 0 ? c : a.getName().compareTo(b.getName());
+            });
+            java.util.Map<String, Integer> perLocale = new java.util.HashMap<>();
+            for (android.speech.tts.Voice v : voices) {
+                if (rank(v) > 1) continue;  // only Spanish and English
+                Locale l = v.getLocale();
+                String region = l.getDisplayCountry(new Locale("es"));
+                String lang = l.getDisplayLanguage(new Locale("es"));
+                String key = lang + region;
+                int n = perLocale.containsKey(key) ? perLocale.get(key) + 1 : 1;
+                perLocale.put(key, n);
+                boolean missing = v.getFeatures() != null
+                        && v.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED);
+                String label = capitalize(lang) + (region.isEmpty() ? "" : " (" + region + ")") + " · voz " + n
+                        + (v.isNetworkConnectionRequired() ? " · usa internet" : "")
+                        + (missing ? " · por descargar" : "");
+                out.put(new JSONObject().put("name", v.getName()).put("label", label));
+            }
+        } catch (Exception ignored) { }
+        return out.toString();
+    }
+
+    private static int rank(android.speech.tts.Voice v) {
+        String lang = v.getLocale().getLanguage();
+        return "es".equals(lang) || "spa".equals(lang) ? 0 : "en".equals(lang) || "eng".equals(lang) ? 1 : 2;
+    }
+
+    private static String capitalize(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Opens the voice engine's download screen, or Android's voice settings. */
+    private void openVoiceDownloads() {
+        android.content.Intent install = new android.content.Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+        if (tts != null && tts.getDefaultEngine() != null) install.setPackage(tts.getDefaultEngine());
+        try {
+            startActivity(install);
+            return;
+        } catch (RuntimeException ignored) { }
+        try {
+            startActivity(new android.content.Intent("com.android.settings.TTS_SETTINGS"));
+        } catch (RuntimeException e) {
+            setStatus("Esta tableta no tiene pantalla para descargar voces");
+        }
     }
 
     private void speak(String text) {
@@ -271,6 +391,10 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQ_LOC) {
+            deviceInfo.startLocation();
+            return;
+        }
         if (requestCode == REQ_CAM) {
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) toggleCamera();
             else setStatus("Necesito permiso para usar la cámara");
@@ -315,12 +439,15 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         deviceInfo.resume();
+        headsetButtons.start();
     }
 
     @Override
     protected void onPause() {
         deviceInfo.pause();
+        headsetButtons.stop();
         listener.cancel();
+        btMic.disconnect();
         if (liveCamera.isOn()) {
             liveCamera.stop();
             callJs("Face.setCameraOn(false)");
@@ -336,6 +463,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         listener.cancel();
+        btMic.disconnect();
+        headsetButtons.release();
         network.shutdownNow();
         if (tts != null) {
             tts.stop();
@@ -401,6 +530,7 @@ public class MainActivity extends Activity {
                         .put("camera", camera())
                         .put("pitch", (double) prefs.getFloat("pitch", 1f))
                         .put("rate", (double) prefs.getFloat("rate", 1f))
+                        .put("voice", prefs.getString("voice", ""))
                         .toString();
             } catch (Exception e) {
                 return "{}";
@@ -414,6 +544,7 @@ public class MainActivity extends Activity {
                 String model = p.optString("model", "sonnet");
                 float pitch = (float) p.optDouble("pitch", 1.0);
                 float rate = (float) p.optDouble("rate", 1.0);
+                String voice = p.optString("voice", "");
                 prefs.edit()
                         .putString("model", model)
                         .putBoolean("edit", p.optBoolean("edit", false))
@@ -421,18 +552,31 @@ public class MainActivity extends Activity {
                         .putString("camera", "front".equals(p.optString("camera")) ? "front" : "back")
                         .putFloat("pitch", pitch)
                         .putFloat("rate", rate)
+                        .putString("voice", voice)
                         .apply();
-                applyVoice(pitch, rate);
+                runOnUiThread(() -> applyVoice(pitch, rate, voice));
             } catch (Exception ignored) {
                 // keep the previous preferences
             }
         }
 
         @JavascriptInterface
-        public void previewVoice(String text, double pitch, double rate) {
+        public void previewVoice(String text, double pitch, double rate, String voice) {
             if (!ttsReady) return;
-            applyVoice((float) pitch, (float) rate);
-            MainActivity.this.speak(text);
+            runOnUiThread(() -> {
+                applyVoice((float) pitch, (float) rate, voice);
+                MainActivity.this.speak(text);
+            });
+        }
+
+        @JavascriptInterface
+        public String getVoices() {
+            return voiceList();
+        }
+
+        @JavascriptInterface
+        public void downloadVoices() {
+            runOnUiThread(MainActivity.this::openVoiceDownloads);
         }
 
         @JavascriptInterface
