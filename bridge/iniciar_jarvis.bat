@@ -16,6 +16,8 @@ if not exist ".venv\Scripts\python.exe" (
   ".venv\Scripts\python.exe" -m pip install --upgrade pip || goto :error
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :error
 )
+rem Pone al dia lo necesario si cambio (rapido cuando ya esta todo).
+".venv\Scripts\python.exe" -m pip install -q -r requirements.txt || goto :error
 
 rem cloudflared abre el link para usar Megadisos fuera de casa (gratis, sin cuenta).
 where cloudflared >nul 2>nul && goto :run

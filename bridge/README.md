@@ -41,7 +41,7 @@ Puedes pasar opciones al `.bat` desde una terminal, por ejemplo `iniciar_jarvis.
 
 - `--port 8738`: usa otro puerto si la ventana dice que el 8737 está ocupado. En la tableta cambia el puerto al mismo número.
 - `--model haiku`: modelo por defecto si la tableta no elige uno. Normalmente lo eliges en la tableta.
-- `--whisper base`: reconocimiento de voz más rápido pero menos preciso. `medium` es más preciso pero más lento. Por defecto `small`.
+- `--whisper small`: cambia el modelo de reconocimiento de voz (se guarda para la próxima vez). Por defecto `large-v3-turbo`, el más preciso: la primera vez descarga unos 1.6 GB y en un PC sin tarjeta NVIDIA tarda unos segundos más por frase. Si lo notas lento, prueba `medium` o `small`. Con tarjeta NVIDIA añade `--device cuda` y va mucho más rápido.
 - `--device cuda`: usa tu tarjeta NVIDIA para Whisper, si tienes una.
 
 ## Darle acceso a tus proyectos
