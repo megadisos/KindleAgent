@@ -50,8 +50,11 @@ public class MainActivity extends Activity {
     private LiveCamera liveCamera;
     private DeviceInfo deviceInfo;
     private BluetoothMic btMic;
+    private TabletActions tabletActions;
+    private volatile org.json.JSONArray pendingActions;  // run once the answer is spoken
     private HeadsetButtons headsetButtons;
     private volatile boolean thinking;  // waiting for the PC's answer
+    private volatile boolean userTurn;  // Jorge is talking (or the mic is being opened)
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -89,6 +92,7 @@ public class MainActivity extends Activity {
         android.view.TextureView preview = new android.view.TextureView(this);
         root.addView(preview);
         liveCamera = new LiveCamera(this, preview);
+        tabletActions = new TabletActions(this, root, this::setStatus);
         setContentView(root);
         webView.loadUrl("file:///android_asset/face/index.html");
 
@@ -103,8 +107,9 @@ public class MainActivity extends Activity {
             }
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override public void onStart(String id) { callJs("Face.setTalking(true)"); }
-                @Override public void onDone(String id) { callJs("Face.setTalking(false)"); }
-                @Override public void onError(String id) { callJs("Face.setTalking(false)"); }
+                @Override public void onDone(String id) { callJs("Face.setTalking(false)"); afterSpeech(id); }
+                @Override public void onError(String id) { callJs("Face.setTalking(false)"); afterSpeech(id); }
+                @Override public void onStop(String id, boolean interrupted) { afterSpeech(id); }
                 @Override public void onRangeStart(String id, int start, int end, int frame) {
                     callJs("Face.pulse()");
                 }
@@ -129,7 +134,9 @@ public class MainActivity extends Activity {
             callJs("Face.openSettings()");
             return;
         }
+        userTurn = true;
         if (tts != null) tts.stop();
+        tabletActions.pauseForListening();
         callJs("Face.setMode('listening')");
         boolean earbuds = btMic.available();
         setStatus(earbuds ? "Conectando el micrófono de los audífonos…" : "Te escucho…");
@@ -140,16 +147,20 @@ public class MainActivity extends Activity {
 
             @Override public void onFinished(File audio, boolean heardSpeech) {
                 btMic.disconnect();
+                userTurn = false;
                 if (!heardSpeech) {
+                    tabletActions.resumeAfterAnswer();
                     callJs("Face.setMode('idle')");
                     setStatus("No escuché nada. Toca para hablar");
                     return;
                 }
-                askBridge(audio, new BridgeClient(host, code));
+                askBridge(audio, client());
             }
 
             @Override public void onError(String message) {
                 btMic.disconnect();
+                userTurn = false;
+                tabletActions.resumeAfterAnswer();
                 callJs("Face.setMode('idle')");
                 setStatus(message);
             }
@@ -187,7 +198,25 @@ public class MainActivity extends Activity {
     }
 
     private BridgeClient client() {
-        return new BridgeClient(prefs.getString("host", ""), prefs.getString("code", ""));
+        return new BridgeClient(prefs.getString("host", ""), prefs.getString("code", ""))
+                .withRemote(prefs.getString("remote_url", ""), prefs.getString("remote_token", ""));
+    }
+
+    /**
+     * On the home wifi, asks the PC for its Cloudflare link and outside key, so
+     * the tablet can still reach Jarvis away from home. Runs on the network thread.
+     */
+    private void learnRemoteLink() {
+        String host = prefs.getString("host", ""), code = prefs.getString("code", "");
+        if (host.isEmpty() || code.isEmpty()) return;
+        try {
+            String[] info = new BridgeClient(host, code).remoteInfo();
+            if (!info[0].isEmpty() && !info[1].isEmpty()) {
+                prefs.edit().putString("remote_url", info[0]).putString("remote_token", info[1]).apply();
+            }
+        } catch (BridgeClient.BridgeException ignored) {
+            // not at home, or an older bridge without a tunnel: keep what we had
+        }
     }
 
     private BridgeClient.Options options() {
@@ -195,7 +224,14 @@ public class MainActivity extends Activity {
         o.model = prefs.getString("model", "sonnet");
         o.edit = prefs.getBoolean("edit", false);
         o.shell = o.edit && prefs.getBoolean("shell", false);
-        o.device = deviceInfo.summary();
+        StringBuilder d = new StringBuilder(deviceInfo.summary());
+        try {
+            java.util.List<String> apps = tabletActions.appNames();
+            if (!apps.isEmpty()) d.append("; apps instaladas: ").append(android.text.TextUtils.join(", ", apps));
+        } catch (RuntimeException ignored) { }
+        String playing = tabletActions.playingTitle();
+        d.append(playing != null ? "; sonando en Jarvis: " + playing : "; no está sonando música en Jarvis");
+        o.device = d.toString();
         return o;
     }
 
@@ -205,6 +241,7 @@ public class MainActivity extends Activity {
 
     private void runQuestion(Question question) {
         thinking = true;
+        tabletActions.pauseForListening();
         callJs("Face.setMode('thinking')");
         setStatus("Pensando…");
         BridgeClient.Options o = options();
@@ -231,12 +268,12 @@ public class MainActivity extends Activity {
             thinking = false;
             callJs("Face.setMode('idle')");
             setStatus(answer.heard.isEmpty() ? "" : "«" + answer.heard + "»");
-            speak(answer.reply);
+            speakAnswer(answer.reply, answer.actions);
         } catch (BridgeClient.BridgeException e) {
             thinking = false;
             callJs("Face.setMode('idle')");
             setStatus(e.getMessage());
-            speak("Tengo un problema para conectarme con el computador.");
+            speakAnswer("Tengo un problema para conectarme con el computador.", null);
         }
     }
 
@@ -378,10 +415,36 @@ public class MainActivity extends Activity {
     }
 
     private void speak(String text) {
+        speak(text, "u");
+    }
+
+    /** Speaks Jarvis's answer, then runs its orders for the tablet. */
+    private void speakAnswer(String text, org.json.JSONArray actions) {
+        pendingActions = actions;
+        if (!ttsReady || text == null || text.trim().isEmpty()) {
+            afterSpeech("answer");
+            return;
+        }
+        speak(text, "answer");
+    }
+
+    private void afterSpeech(String utteranceId) {
+        if (utteranceId == null || !utteranceId.startsWith("answer")) return;
+        org.json.JSONArray actions = pendingActions;
+        pendingActions = null;
+        runOnUiThread(() -> {
+            // Interrupted because Jorge started talking again: leave the music paused.
+            if (userTurn || thinking) return;
+            tabletActions.resumeAfterAnswer();
+            if (actions != null && actions.length() > 0) tabletActions.run(actions);
+        });
+    }
+
+    private void speak(String text, String idPrefix) {
         if (!ttsReady || text == null || text.isEmpty()) return;
         // Claude sometimes still uses Markdown; don't read the symbols aloud.
         text = text.replaceAll("[*#`_>]+", "").replaceAll("\\[([^\\]]*)\\]\\([^)]*\\)", "$1");
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "u" + System.currentTimeMillis());
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, idPrefix + System.currentTimeMillis());
     }
 
     private void setStatus(String text) {
@@ -440,6 +503,7 @@ public class MainActivity extends Activity {
         super.onResume();
         deviceInfo.resume();
         headsetButtons.start();
+        new Thread(this::learnRemoteLink).start();  // not on "network": may wait for a timeout away from home
     }
 
     @Override
@@ -447,6 +511,7 @@ public class MainActivity extends Activity {
         deviceInfo.pause();
         headsetButtons.stop();
         listener.cancel();
+        userTurn = false;
         btMic.disconnect();
         if (liveCamera.isOn()) {
             liveCamera.stop();
@@ -462,6 +527,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        tabletActions.destroy();
         listener.cancel();
         btMic.disconnect();
         headsetButtons.release();
@@ -586,6 +652,7 @@ public class MainActivity extends Activity {
                     new BridgeClient(host, code).checkCode();
                     prefs.edit().putString("host", host.trim()).putString("code", code.trim()).apply();
                     callJs("Face.configResult(true, " + JSONObject.quote("¡Conectado con el PC!") + ")");
+                    learnRemoteLink();
                 } catch (BridgeClient.BridgeException e) {
                     callJs("Face.configResult(false, " + JSONObject.quote(e.getMessage()) + ")");
                 }
