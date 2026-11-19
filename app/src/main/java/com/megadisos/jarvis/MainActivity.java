@@ -49,6 +49,9 @@ public class MainActivity extends Activity {
     private boolean listenAfterPermission = false;
     private LiveCamera liveCamera;
     private DeviceInfo deviceInfo;
+    private BluetoothMic btMic;
+    private HeadsetButtons headsetButtons;
+    private volatile boolean thinking;  // waiting for the PC's answer
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -57,6 +60,8 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         deviceInfo = new DeviceInfo(this);
+        btMic = new BluetoothMic(this);
+        headsetButtons = new HeadsetButtons(this, () -> runOnUiThread(this::onHeadsetTap));
         if (Build.VERSION.SDK_INT >= 23 && !deviceInfo.hasLocationPermission()
                 && !prefs.getBoolean("asked_location", false)) {
             // Asked once, so Jarvis can tell where the tablet is. Can be changed later in Android settings.
@@ -126,13 +131,15 @@ public class MainActivity extends Activity {
         }
         if (tts != null) tts.stop();
         callJs("Face.setMode('listening')");
-        setStatus("Te escucho…");
-        listener.start(new Listener.Callback() {
+        boolean earbuds = btMic.available();
+        setStatus(earbuds ? "Conectando el micrófono de los audífonos…" : "Te escucho…");
+        Listener.Callback cb = new Listener.Callback() {
             @Override public void onLevel(float level) {
                 callJs("Face.setLevel(" + level + ")");
             }
 
             @Override public void onFinished(File audio, boolean heardSpeech) {
+                btMic.disconnect();
                 if (!heardSpeech) {
                     callJs("Face.setMode('idle')");
                     setStatus("No escuché nada. Toca para hablar");
@@ -142,27 +149,37 @@ public class MainActivity extends Activity {
             }
 
             @Override public void onError(String message) {
+                btMic.disconnect();
                 callJs("Face.setMode('idle')");
                 setStatus(message);
             }
+        };
+        btMic.connect(bluetooth -> {
+            setStatus(bluetooth ? "Te escucho por los audífonos…" : "Te escucho…");
+            listener.start(cb, bluetooth);
         });
     }
 
-    private interface Question {
-        BridgeClient.Answer send(BridgeClient client, BridgeClient.Options options) throws BridgeClient.BridgeException;
+    /** A tap on the earbuds: talk, stop talking, or interrupt Jarvis. */
+    private void onHeadsetTap() {
+        if (listener.isListening()) {
+            listener.finish();
+        } else if (tts != null && tts.isSpeaking()) {
+            tts.stop();
+            callJs("Face.setTalking(false)");
+        } else if (!thinking) {
+            startListening();
+        }
     }
 
-    private BridgeClient client() {
-        return new BridgeClient(prefs.getString("host", ""), prefs.getString("code", ""));
-    }
-
-    private BridgeClient.Options options() {
-        BridgeClient.Options o = new BridgeClient.Options();
-        o.model = prefs.getString("model", "sonnet");
-        o.edit = prefs.getBoolean("edit", false);
-        o.shell = o.edit && prefs.getBoolean("shell", false);
-        o.device = deviceInfo.summary();
-        return o;
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent e) {
+        // When the app is in front some tablets deliver the tap as a key instead.
+        if (HeadsetButtons.isTap(e.getKeyCode())) {
+            if (e.getAction() == android.view.KeyEvent.ACTION_UP) onHeadsetTap();
+            return true;
+        }
+        return super.dispatchKeyEvent(e);
     }
 
     private void askBridge(File audio, BridgeClient client) {
@@ -170,6 +187,7 @@ public class MainActivity extends Activity {
     }
 
     private void runQuestion(Question question) {
+        thinking = true;
         callJs("Face.setMode('thinking')");
         setStatus("Pensando…");
         BridgeClient.Options o = options();
@@ -193,10 +211,12 @@ public class MainActivity extends Activity {
                 }
             }
             BridgeClient.Answer answer = question.send(c, o);
+            thinking = false;
             callJs("Face.setMode('idle')");
             setStatus(answer.heard.isEmpty() ? "" : "«" + answer.heard + "»");
             speak(answer.reply);
         } catch (BridgeClient.BridgeException e) {
+            thinking = false;
             callJs("Face.setMode('idle')");
             setStatus(e.getMessage());
             speak("Tengo un problema para conectarme con el computador.");
@@ -402,12 +422,15 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         deviceInfo.resume();
+        headsetButtons.start();
     }
 
     @Override
     protected void onPause() {
         deviceInfo.pause();
+        headsetButtons.stop();
         listener.cancel();
+        btMic.disconnect();
         if (liveCamera.isOn()) {
             liveCamera.stop();
             callJs("Face.setCameraOn(false)");
@@ -423,6 +446,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         listener.cancel();
+        btMic.disconnect();
+        headsetButtons.release();
         network.shutdownNow();
         if (tts != null) {
             tts.stop();

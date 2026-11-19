@@ -22,6 +22,7 @@ class Listener {
 
     private static final int POLL_MS = 100;
     private static final int SPEECH_LEVEL = 2500;      // getMaxAmplitude units, 0..32767
+    private static final int SPEECH_LEVEL_BT = 1500;   // earbud mics come in quieter
     private static final int SILENCE_TO_STOP_MS = 1500;
     private static final int NO_SPEECH_TIMEOUT_MS = 7000;
     private static final int MAX_MS = 30000;
@@ -34,6 +35,7 @@ class Listener {
     private long startedAt;
     private long lastSpeechAt;
     private boolean heardSpeech;
+    private int speechLevel = SPEECH_LEVEL;
 
     Listener(Context context) {
         this.context = context;
@@ -44,12 +46,19 @@ class Listener {
     }
 
     void start(Callback cb) {
+        start(cb, false);
+    }
+
+    /** @param bluetooth record from the earbuds (BluetoothMic already connected) */
+    void start(Callback cb, boolean bluetooth) {
         if (recorder != null) return;
         callback = cb;
         file = new File(context.getCacheDir(), "question.m4a");
         try {
             recorder = new MediaRecorder();
-            recorder.setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION);
+            // Over Bluetooth only the plain MIC source is routed to the earbuds everywhere.
+            recorder.setAudioSource(bluetooth ? MediaRecorder.AudioSource.MIC
+                    : MediaRecorder.AudioSource.VOICE_RECOGNITION);
             recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
             recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
             recorder.setAudioChannels(1);
@@ -63,6 +72,7 @@ class Listener {
             cb.onError("No pude usar el micrófono");
             return;
         }
+        speechLevel = bluetooth ? SPEECH_LEVEL_BT : SPEECH_LEVEL;
         startedAt = System.currentTimeMillis();
         lastSpeechAt = startedAt;
         heardSpeech = false;
@@ -109,7 +119,7 @@ class Listener {
             if (recorder == null) return;
             long now = System.currentTimeMillis();
             int amp = recorder.getMaxAmplitude();
-            if (amp > SPEECH_LEVEL) {
+            if (amp > speechLevel) {
                 heardSpeech = true;
                 lastSpeechAt = now;
             }

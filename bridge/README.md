@@ -75,6 +75,12 @@ Con cada pregunta, la app manda un resumen del estado de la tableta: batería (y
 
 La ubicación pide permiso la primera vez que abres la app. Si dijiste que no, o Jarvis dice que la ubicación está apagada, actívala en la tableta en **Configuración → Ubicación** (y en **Apps → Jarvis → Permisos**). La Fire no tiene GPS: la ubica por el wifi, así que es aproximada.
 
+## Audífonos Bluetooth
+
+Si conectas audífonos Bluetooth con micrófono (por ejemplo Galaxy Buds) a la tableta, Jarvis te escucha por el micrófono de los audífonos y te responde por ellos. Al empezar a escuchar tarda un segundo en abrir el micrófono (dice "Conectando el micrófono de los audífonos…").
+
+Un toque en el audífono (el de pausar o reproducir) hace lo mismo que tocar la cara: empieza a escuchar, termina de escuchar o interrumpe a Jarvis cuando está hablando. Funciona con la app abierta.
+
 ## Voz de Jarvis
 
 En ⚙ → **Voz** escoges entre las voces que tenga la tableta (al cambiarla suena una prueba), y ajustas tono y velocidad. **⬇ Descargar más voces** abre la pantalla del motor de voz de la tableta para bajar voces nuevas; al volver aparecen en la lista. Las que dicen "por descargar" se bajan solas la primera vez que se usan (si el motor lo permite), y las que dicen "usa internet" necesitan wifi.
