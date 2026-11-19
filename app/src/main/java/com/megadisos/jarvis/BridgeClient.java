@@ -12,7 +12,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
-/** Minimal HTTP client for the Jarvis bridge running on the PC. */
+/** Minimal HTTP client for the Megadisos bridge running on the PC. */
 class BridgeClient {
 
     static final int PORT = 8737;
@@ -33,7 +33,7 @@ class BridgeClient {
         BridgeException(String message) { super(message); }
     }
 
-    /** No answer at all from that address (as opposed to an error from Jarvis). */
+    /** No answer at all from that address (as opposed to an error from Megadisos). */
     static class Unreachable extends BridgeException {
         Unreachable(String message) { super(message); }
     }
@@ -85,11 +85,11 @@ class BridgeClient {
             health = request("GET", "/health", null, null, 5000);
         } catch (BridgeException e) {
             if (e.getMessage().startsWith("No encuentro")) throw e;
-            health = new JSONObject(); // something answered, but not Jarvis
+            health = new JSONObject(); // something answered, but not Megadisos
         }
         if (!"jarvis".equals(health.optString("app"))) {
-            throw new BridgeException("En esa IP y puerto responde otro programa, no Jarvis. "
-                    + "Revisa la IP:puerto que muestra la ventana de Jarvis en el PC.");
+            throw new BridgeException("En esa IP y puerto responde otro programa, no Megadisos. "
+                    + "Revisa la IP:puerto que muestra la ventana de Megadisos en el PC.");
         }
         request("POST", "/reset", "application/json", "{}".getBytes(StandardCharsets.UTF_8), 8000);
     }
@@ -169,7 +169,7 @@ class BridgeClient {
                 return json;
             } catch (Unreachable second) {
                 throw new BridgeException("No encuentro el PC ni en casa ni por internet. "
-                        + "¿Está encendido Jarvis en el PC? Si lo reiniciaste, conéctate una vez al wifi de casa "
+                        + "¿Está encendido Megadisos en el PC? Si lo reiniciaste, conéctate una vez al wifi de casa "
                         + "para que aprenda el link nuevo.");
             }
         }
@@ -196,7 +196,7 @@ class BridgeClient {
             try {
                 conn.connect();
             } catch (IOException e) {
-                throw new Unreachable("No encuentro el PC. ¿Está encendido Jarvis en el PC y en el mismo wifi? ("
+                throw new Unreachable("No encuentro el PC. ¿Está encendido Megadisos en el PC y en el mismo wifi? ("
                         + e.getClass().getSimpleName() + ": " + e.getMessage() + ")");
             }
             if (body != null) {
@@ -213,14 +213,14 @@ class BridgeClient {
             } catch (org.json.JSONException e) {
                 // Cloudflare answers by itself when the PC's tunnel is gone.
                 if (remote && status == 524) {
-                    throw new BridgeException("Por internet solo se puede esperar 100 segundos y Jarvis tardó más. "
+                    throw new BridgeException("Por internet solo se puede esperar 100 segundos y Megadisos tardó más. "
                             + "Sigue trabajando en el PC: pregúntale en un rato cómo le fue.");
                 }
                 if (remote && status >= 500) throw new Unreachable("El link de internet ya no funciona");
                 // Not our bridge answering (another program, a router, a filter).
                 String snippet = text.replaceAll("\\s+", " ").trim();
                 if (snippet.length() > 120) snippet = snippet.substring(0, 120);
-                throw new BridgeException("Respondió algo que no es Jarvis (error " + status + "): " + snippet);
+                throw new BridgeException("Respondió algo que no es Megadisos (error " + status + "): " + snippet);
             }
             if (status >= 400) {
                 throw new BridgeException(json.optString("error", "El PC respondió con error") + " (" + status + ")");
@@ -231,7 +231,7 @@ class BridgeClient {
         } catch (java.net.SocketTimeoutException e) {
             throw new BridgeException("El PC tardó demasiado en responder");
         } catch (IOException e) {
-            throw new BridgeException("No encuentro el PC. ¿Está encendido Jarvis en el PC y en el mismo wifi? ("
+            throw new BridgeException("No encuentro el PC. ¿Está encendido Megadisos en el PC y en el mismo wifi? ("
                     + e.getClass().getSimpleName() + ": " + e.getMessage() + ")");
         } catch (Exception e) {
             throw new BridgeException("Respuesta extraña del PC (" + e + ")");

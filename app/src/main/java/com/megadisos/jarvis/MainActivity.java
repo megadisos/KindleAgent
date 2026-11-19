@@ -67,7 +67,7 @@ public class MainActivity extends Activity {
         headsetButtons = new HeadsetButtons(this, () -> runOnUiThread(this::onHeadsetTap));
         if (Build.VERSION.SDK_INT >= 23 && !deviceInfo.hasLocationPermission()
                 && !prefs.getBoolean("asked_location", false)) {
-            // Asked once, so Jarvis can tell where the tablet is. Can be changed later in Android settings.
+            // Asked once, so Megadisos can tell where the tablet is. Can be changed later in Android settings.
             prefs.edit().putBoolean("asked_location", true).apply();
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOC);
@@ -171,7 +171,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** A tap on the earbuds: talk, stop talking, or interrupt Jarvis. */
+    /** A tap on the earbuds: talk, stop talking, or interrupt Megadisos. */
     private void onHeadsetTap() {
         if (listener.isListening()) {
             listener.finish();
@@ -204,7 +204,7 @@ public class MainActivity extends Activity {
 
     /**
      * On the home wifi, asks the PC for its Cloudflare link and outside key, so
-     * the tablet can still reach Jarvis away from home. Runs on the network thread.
+     * the tablet can still reach Megadisos away from home. Runs on the network thread.
      */
     private void learnRemoteLink() {
         String host = prefs.getString("host", ""), code = prefs.getString("code", "");
@@ -230,7 +230,7 @@ public class MainActivity extends Activity {
             if (!apps.isEmpty()) d.append("; apps instaladas: ").append(android.text.TextUtils.join(", ", apps));
         } catch (RuntimeException ignored) { }
         String playing = tabletActions.playingTitle();
-        d.append(playing != null ? "; sonando en Jarvis: " + playing : "; no está sonando música en Jarvis");
+        d.append(playing != null ? "; sonando en Megadisos: " + playing : "; no está sonando música en Megadisos");
         o.device = d.toString();
         return o;
     }
@@ -418,7 +418,7 @@ public class MainActivity extends Activity {
         speak(text, "u");
     }
 
-    /** Speaks Jarvis's answer, then runs its orders for the tablet. */
+    /** Speaks Megadisos's answer, then runs its orders for the tablet. */
     private void speakAnswer(String text, org.json.JSONArray actions) {
         pendingActions = actions;
         if (!ttsReady || text == null || text.trim().isEmpty()) {

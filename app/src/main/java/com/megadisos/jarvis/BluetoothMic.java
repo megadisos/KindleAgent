@@ -85,7 +85,7 @@ class BluetoothMic {
         }
     }
 
-    /** Back to normal audio, so Jarvis's answer plays in stereo quality. */
+    /** Back to normal audio, so Megadisos's answer plays in stereo quality. */
     void disconnect() {
         handler.removeCallbacksAndMessages(null);  // a pending timeout must not start recording
         if (receiver != null) {

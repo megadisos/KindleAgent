@@ -31,7 +31,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Runs the orders Jarvis puts in its answers: open or close apps, open links,
+ * Runs the orders Megadisos puts in its answers: open or close apps, open links,
  * play music from YouTube in a small player over the face, pause, volume.
  * Everything here runs on the UI thread.
  */
@@ -118,7 +118,7 @@ class TabletActions {
         return player == null ? null : playingTitle;
     }
 
-    /** While Jorge talks the music pauses; it continues after Jarvis answers. */
+    /** While Jorge talks the music pauses; it continues after Megadisos answers. */
     void pauseForListening() {
         if (player == null) return;
         pausedForListening = true;
@@ -205,7 +205,7 @@ class TabletActions {
 
     // ---- other apps ---------------------------------------------------------
 
-    /** Launchable apps, by name, for Jarvis to know what it can open. */
+    /** Launchable apps, by name, for Megadisos to know what it can open. */
     List<String> appNames() {
         List<String> names = new ArrayList<>();
         for (ResolveInfo r : launchables()) {
@@ -247,7 +247,7 @@ class TabletActions {
 
     private void closeApp(String name) {
         mediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE);
-        // Jarvis is in front when it gets this order, so the other app is in the background now.
+        // Megadisos is in front when it gets this order, so the other app is in the background now.
         ResolveInfo r = findApp(name);
         if (r == null) return;
         ActivityManager am = (ActivityManager) activity.getSystemService(Activity.ACTIVITY_SERVICE);

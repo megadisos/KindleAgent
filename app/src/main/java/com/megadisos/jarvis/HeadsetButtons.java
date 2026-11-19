@@ -10,7 +10,7 @@ import android.media.session.PlaybackState;
 import android.view.KeyEvent;
 
 /**
- * A tap on the earbuds (play/pause) reaches Jarvis. Android sends media
+ * A tap on the earbuds (play/pause) reaches Megadisos. Android sends media
  * buttons to the app that played audio last, so on start we play a moment
  * of silence to become that app.
  */
@@ -27,7 +27,7 @@ class HeadsetButtons {
 
     void start() {
         if (session == null) {
-            session = new MediaSession(context, "Jarvis");
+            session = new MediaSession(context, "Megadisos");
             session.setCallback(new MediaSession.Callback() {
                 @Override
                 public boolean onMediaButtonEvent(Intent intent) {

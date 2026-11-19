@@ -42,5 +42,5 @@ jobs:
         run: |
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest jarvis.apk \
-            --title "Jarvis (última versión)" \
+            --title "Megadisos (última versión)" \
             --notes "Built from ${GITHUB_SHA::7}. Descarga jarvis.apk desde la tableta para instalar."

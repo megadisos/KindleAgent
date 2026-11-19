@@ -1,4 +1,4 @@
-# KindleAgent: Jarvis en una Fire 7
+# KindleAgent: Megadisos en una Fire 7
 
 Convierte una tableta Amazon Fire 7 en un asistente de voz con cara animada que conversa usando Claude. La tableta pone la cara, el micrófono y la voz; un pequeño programa en tu PC con Windows hace de puente con Claude usando tu plan Pro (ver [`bridge/`](bridge/README.md)).
 
@@ -7,7 +7,7 @@ Convierte una tableta Amazon Fire 7 en un asistente de voz con cara animada que 
 - [x] **Paso 1: la cara.** App a pantalla completa con ojos que parpadean y una boca que se mueve al hablar. Tocar la cara la hace decir un saludo con la voz de la tableta.
 - [x] **Paso 2: la voz.** Tocas la cara, hablas, la tableta envía el audio al PC, el PC lo pasa a texto con Whisper y le pregunta a Claude Code, y la tableta dice la respuesta.
 - [x] **Extras:** escribirle con el teclado (⌨), cámara en vivo para que vea lo que tienes enfrente (📷), conoce su batería, sensores y ubicación (🔋📍), elegir modelo, modo edición, terminal, escoger o descargar la voz, hablarle por audífonos Bluetooth (🎧) poner música y abrir apps (🎵), y usarlo fuera de casa con un túnel de Cloudflare (🌐).
-- [ ] **Paso 3: modo Jarvis.** Abrir al encender, personalidad, memoria.
+- [ ] **Paso 3: modo Megadisos.** Abrir al encender, personalidad, memoria.
 - [ ] **Paso 4: extras.** Recordatorios, clima, etc.
 
 ## Instalar en la Fire
@@ -15,7 +15,7 @@ Convierte una tableta Amazon Fire 7 en un asistente de voz con cara animada que 
 1. En la tableta: **Configuración → Seguridad y privacidad → Apps de fuentes desconocidas** y permite a **Silk** (el navegador) instalar apps.
 2. Abre en Silk la página de [la última versión](https://github.com/megadisos/KindleAgent/releases/tag/latest) y descarga `jarvis.apk`.
 3. Abre el archivo descargado y toca **Instalar**.
-4. Abre **Jarvis**, toca el engranaje ⚙ y escribe la IP y el código que muestra el puente en tu PC.
+4. Abre **Megadisos**, toca el engranaje ⚙ y escribe la IP y el código que muestra el puente en tu PC.
 5. Toca la cara y habla.
 
 Cada vez que se fusiona un cambio en `main`, GitHub compila un APK nuevo y lo publica en esa misma página. Para actualizar, descárgalo e instálalo encima; no hace falta desinstalar.
